@@ -776,6 +776,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "moderc3156"
+version = "0.1.0"
+source = "git+https://github.com/xycloo/xycloans?rev=d9a7ae1#d9a7ae163e6c7120000532bf4b15b6a96b3a82bc"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
 name = "num-bigint"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -858,6 +866,7 @@ dependencies = [
  "cast",
  "emitter",
  "mock-pool-factory",
+ "moderc3156",
  "sep-40-oracle",
  "sep-41-token",
  "soroban-fixed-point-math",
