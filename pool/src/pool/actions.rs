@@ -29,6 +29,7 @@ pub enum RequestType {
     FillBadDebtAuction = 7,
     FillInterestAuction = 8,
     DeleteLiquidationAuction = 9,
+    FlashBorrow = 10,
 }
 
 impl RequestType {
@@ -48,6 +49,7 @@ impl RequestType {
             7 => RequestType::FillBadDebtAuction,
             8 => RequestType::FillInterestAuction,
             9 => RequestType::DeleteLiquidationAuction,
+            10 => RequestType::FlashBorrow,
             _ => panic_with_error!(e, PoolError::BadRequest),
         }
     }
@@ -57,6 +59,7 @@ impl RequestType {
 pub struct Actions {
     pub spender_transfer: Map<Address, i128>,
     pub pool_transfer: Map<Address, i128>,
+    pub flash_borrow: Vec<(Address, i128)>, // we expect flash borrows not to be dynamic.
 }
 
 impl Actions {
@@ -65,6 +68,7 @@ impl Actions {
         Actions {
             spender_transfer: Map::new(e),
             pool_transfer: Map::new(e),
+            flash_borrow: Vec::new(e),
         }
     }
 
@@ -82,6 +86,10 @@ impl Actions {
             asset.clone(),
             amount + self.pool_transfer.get(asset.clone()).unwrap_or(0),
         );
+    }
+
+    pub fn add_flash_borrow(&mut self, asset: &Address, amount: i128) {
+        self.flash_borrow.push_back((asset.clone(), amount));
     }
 }
 
@@ -190,13 +198,16 @@ pub fn build_actions_from_request(
                 );
             }
             RequestType::Borrow => {
-                let mut reserve = pool.load_reserve(e, &request.address, true);
-                let d_tokens_minted = reserve.to_d_token_up(request.amount);
-                from_state.add_liabilities(e, &mut reserve, d_tokens_minted);
-                reserve.require_utilization_below_max(e);
-                actions.add_for_pool_transfer(&reserve.asset, request.amount);
-                check_health = true;
-                pool.cache_reserve(reserve);
+                let d_tokens_minted = build_borrow_generic(
+                    e,
+                    pool,
+                    &mut from_state,
+                    &mut actions,
+                    &mut check_health,
+                    request.clone(),
+                    false,
+                );
+
                 e.events().publish(
                     (
                         Symbol::new(e, "borrow"),
@@ -307,6 +318,32 @@ pub fn build_actions_from_request(
                     (),
                 );
             }
+            // This is pretty much just a standard borrow that however immediately transfers
+            // the borrowed amount to [`user`] instead of adding it to the transfer actions.
+            // It also calls a contract ([`user`]). This step will panic if the provided address
+            // is not a contract or does not respect the flash loan interface. Both the transfer
+            // and the invocation don't need to happen within this code block, just before the
+            // other actions.
+            RequestType::FlashBorrow => {
+                let d_tokens_minted = build_borrow_generic(
+                    e,
+                    pool,
+                    &mut from_state,
+                    &mut actions,
+                    &mut check_health,
+                    request.clone(),
+                    true,
+                );
+
+                e.events().publish(
+                    (
+                        Symbol::new(e, "flash_borrow"),
+                        request.address.clone(),
+                        from.clone(),
+                    ),
+                    (request.amount, d_tokens_minted),
+                );
+            }
         }
     }
 
@@ -314,6 +351,38 @@ pub fn build_actions_from_request(
     pool.require_under_max(e, &from_state.positions, prev_positions_count);
 
     (actions, from_state, check_health)
+}
+
+fn build_borrow_generic(
+    e: &Env,
+    pool: &mut Pool,
+    from_state: &mut User,
+    actions: &mut Actions,
+    check_health: &mut bool,
+    request: Request,
+    flash: bool,
+) -> i128 {
+    let transfer_amount = request.amount;
+    let token_address = &request.address;
+    let mut reserve = pool.load_reserve(e, token_address, true);
+    let d_tokens_minted = reserve.to_d_token_up(transfer_amount);
+    from_state.add_liabilities(e, &mut reserve, d_tokens_minted);
+    reserve.require_utilization_below_max(e);
+    
+    // the actual difference between the flash borrow and standard borrow.
+    if !flash {
+        actions.add_for_pool_transfer(token_address, transfer_amount);
+    } else {
+        actions.add_flash_borrow(token_address, transfer_amount);
+    }
+    *check_health = true;
+    pool.cache_reserve(reserve);
+
+    // we don't directly emit the event here because we may want flashborrow
+    // and borrow to have distinct event structure. Note that the additional clone
+    // introduced to support this logic has no effect on cost since it's just a stub.
+
+    d_tokens_minted
 }
 
 #[cfg(test)]

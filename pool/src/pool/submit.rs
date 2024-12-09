@@ -1,3 +1,4 @@
+use moderc3156::FlashLoanClient;
 use sep_41_token::TokenClient;
 use soroban_sdk::{panic_with_error, Address, Env, Vec};
 
@@ -47,6 +48,25 @@ pub fn execute_submit(
     {
         panic_with_error!(e, PoolError::InvalidHf);
     }
+
+    // deal with potential flash lending before dealing with the other transfers.
+    // tbd: do we want to allow for multiple flash loans? There doesn't seem to be a risk in it so currently enabled.
+    for (address, amount) in actions.flash_borrow {
+        // note: TBD if `from` is indeed the receiver contract (it probably isn't? better to not add new args)
+        TokenClient::new(e, &address).transfer(&e.current_contract_address(), from, &amount); 
+        // calls the receiver contract.
+        FlashLoanClient::new(&e, from).exec_op(
+            &e.current_contract_address(),
+            &address,
+            &amount,
+            &0,
+        );
+    }
+    
+    // note: at this point, the pool has sum_by_asset(actions.flash_borrow.1) for each involed asset, but the user also has
+    // increased liabilities. These will have to be either fully repaid by now in the requests following the flash borrow
+    // or the user needs to have some previously added collateral to cover the borrow, i.e user is already healthy at this point,
+    // we just have to make sure that they have the balances they are claiming to have through the transfers. 
 
     // transfer tokens from sender to pool
     for (address, amount) in actions.spender_transfer.iter() {
