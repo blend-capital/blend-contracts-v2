@@ -46,7 +46,8 @@ fn test_pool_user() {
         &fixture.env,
         Request {
             request_type: RequestType::Supply as u32,
-            address: weth.address.clone(),
+            asset: weth.address.clone(),
+            user: sam.clone(),
             amount,
         },
     ];
@@ -132,7 +133,8 @@ fn test_pool_user() {
         &fixture.env,
         Request {
             request_type: RequestType::Withdraw as u32,
-            address: weth.address.clone(),
+            asset: weth.address.clone(),
+            user: sam.clone(),
             amount,
         },
     ];
@@ -202,7 +204,8 @@ fn test_pool_user() {
         &fixture.env,
         Request {
             request_type: RequestType::SupplyCollateral as u32,
-            address: xlm.address.clone(),
+            asset: xlm.address.clone(),
+            user: sam.clone(),
             amount,
         },
     ];
@@ -285,7 +288,8 @@ fn test_pool_user() {
         &fixture.env,
         Request {
             request_type: RequestType::Borrow as u32,
-            address: weth.address.clone(),
+            asset: weth.address.clone(),
+            user: sam.clone(),
             amount,
         },
     ];
@@ -368,15 +372,18 @@ fn test_pool_user() {
         &fixture.env,
         Request {
             request_type: RequestType::WithdrawCollateral as u32,
-            address: xlm.address.clone(),
+            asset: xlm.address.clone(),
+            user: sam.clone(),
             amount: amount_withdrawal,
         },
         Request {
             request_type: RequestType::Repay as u32,
-            address: weth.address.clone(),
+            asset: weth.address.clone(),
+            user: sam.clone(),
             amount: amount_repay,
         },
     ];
+    let sam_weth_balance_before = weth.balance(&sam);
     let result = pool_fixture.pool.submit(&sam, &sam, &sam, &requests);
     assert_eq!(
         fixture.env.auths()[0],
@@ -402,7 +409,8 @@ fn test_pool_user() {
                             &fixture.env,
                             sam.to_val(),
                             pool_fixture.pool.address.to_val(),
-                            amount_repay.into_val(&fixture.env)
+                            // calculate actual repaid
+                            (sam_weth_balance_before - weth.balance(&sam)).into_val(&fixture.env)
                         ]
                     )),
                     sub_invocations: std::vec![]
@@ -424,8 +432,8 @@ fn test_pool_user() {
     );
     assert_eq!(result.collateral.len(), 0);
     let events = fixture.env.events().all();
-    // @dev: three transfer events follow the pool events, 1 pool event follows
-    let event = vec![&fixture.env, events.get_unchecked(events.len() - 5)];
+    // @dev: two transfer events follow the pool events, 1 pool event follows
+    let event = vec![&fixture.env, events.get_unchecked(events.len() - 4)];
     let event_data: soroban_sdk::Vec<Val> = vec![
         &fixture.env,
         est_xlm.into_val(&fixture.env),
@@ -461,8 +469,8 @@ fn test_pool_user() {
         10,
     );
     assert_eq!(result.liabilities.len(), 0);
-    // @dev: three transfer events follow the pool events
-    let event = vec![&fixture.env, events.get_unchecked(events.len() - 4)];
+    // @dev: two transfer events follow the pool events
+    let event = vec![&fixture.env, events.get_unchecked(events.len() - 3)];
     let event_data: soroban_sdk::Vec<Val> = vec![
         &fixture.env,
         est_weth.into_val(&fixture.env),

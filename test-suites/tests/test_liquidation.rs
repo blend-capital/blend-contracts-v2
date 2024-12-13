@@ -23,32 +23,38 @@ fn test_liquidations() {
         &fixture.env,
         Request {
             request_type: RequestType::Borrow as u32,
-            address: fixture.tokens[TokenIndex::STABLE].address.clone(),
+            asset: fixture.tokens[TokenIndex::STABLE].address.clone(),
+            user: frodo.clone(),
             amount: 10,
         },
         Request {
             request_type: RequestType::Repay as u32,
-            address: fixture.tokens[TokenIndex::STABLE].address.clone(),
+            asset: fixture.tokens[TokenIndex::STABLE].address.clone(),
+            user: frodo.clone(),
             amount: 10,
         },
         Request {
             request_type: RequestType::Borrow as u32,
-            address: fixture.tokens[TokenIndex::XLM].address.clone(),
+            user: frodo.clone(),
+            asset: fixture.tokens[TokenIndex::XLM].address.clone(),
             amount: 10,
         },
         Request {
             request_type: RequestType::Repay as u32,
-            address: fixture.tokens[TokenIndex::XLM].address.clone(),
+            asset: fixture.tokens[TokenIndex::XLM].address.clone(),
+            user: frodo.clone(),
             amount: 10,
         },
         Request {
             request_type: RequestType::Borrow as u32,
-            address: fixture.tokens[TokenIndex::WETH].address.clone(),
+            asset: fixture.tokens[TokenIndex::WETH].address.clone(),
+            user: frodo.clone(),
             amount: 10,
         },
         Request {
             request_type: RequestType::Repay as u32,
-            address: fixture.tokens[TokenIndex::WETH].address.clone(),
+            asset: fixture.tokens[TokenIndex::WETH].address.clone(),
+            user: frodo.clone(),
             amount: 10,
         },
     ];
@@ -96,7 +102,8 @@ fn test_liquidations() {
         &fixture.env,
         Request {
             request_type: RequestType::SupplyCollateral as u32,
-            address: fixture.tokens[TokenIndex::STABLE].address.clone(),
+            asset: fixture.tokens[TokenIndex::STABLE].address.clone(),
+            user: frodo.clone(),
             amount: 30_000 * 10i128.pow(6),
         },
     ];
@@ -109,23 +116,27 @@ fn test_liquidations() {
         &fixture.env,
         Request {
             request_type: RequestType::SupplyCollateral as u32,
-            address: fixture.tokens[TokenIndex::XLM].address.clone(),
+            asset: fixture.tokens[TokenIndex::XLM].address.clone(),
+            user: samwise.clone(),
             amount: 160_000 * SCALAR_7,
         },
         Request {
             request_type: RequestType::SupplyCollateral as u32,
-            address: fixture.tokens[TokenIndex::WETH].address.clone(),
+            asset: fixture.tokens[TokenIndex::WETH].address.clone(),
+            user: samwise.clone(),
             amount: 17 * 10i128.pow(9),
         },
         // Sam's max borrow is 39_200 STABLE
         Request {
             request_type: RequestType::Borrow as u32,
-            address: fixture.tokens[TokenIndex::STABLE].address.clone(),
+            asset: fixture.tokens[TokenIndex::STABLE].address.clone(),
+            user: samwise.clone(),
             amount: 28_000 * 10i128.pow(6),
         }, // reduces Sam's max borrow to 14_526.31579 STABLE
         Request {
             request_type: RequestType::Borrow as u32,
-            address: fixture.tokens[TokenIndex::XLM].address.clone(),
+            asset: fixture.tokens[TokenIndex::XLM].address.clone(),
+            user: samwise.clone(),
             amount: 65_000 * SCALAR_7,
         },
     ];
@@ -266,27 +277,32 @@ fn test_liquidations() {
         &fixture.env,
         Request {
             request_type: RequestType::FillUserLiquidationAuction as u32,
-            address: samwise.clone(),
+            asset: frodo.clone(),
+            user: samwise.clone(),
             amount: 25,
         },
         Request {
             request_type: RequestType::FillUserLiquidationAuction as u32,
-            address: samwise.clone(),
+            asset: frodo.clone(),
+            user: samwise.clone(),
             amount: 100,
         },
         Request {
             request_type: RequestType::FillInterestAuction as u32,
-            address: fixture.backstop.address.clone(), //address shouldn't matter
+            asset: fixture.backstop.address.clone(), //address shouldn't matter
+            user: fixture.backstop.address.clone(),
             amount: 99,
         },
         Request {
             request_type: RequestType::FillInterestAuction as u32,
-            address: fixture.backstop.address.clone(), //address shouldn't matter
+            asset: fixture.backstop.address.clone(), //address shouldn't matter
+            user: fixture.backstop.address.clone(),
             amount: 100,
         },
         Request {
             request_type: RequestType::Repay as u32,
-            address: fixture.tokens[TokenIndex::STABLE].address.clone(),
+            asset: fixture.tokens[TokenIndex::STABLE].address.clone(),
+            user: frodo.clone(),
             amount: usdc_bid_amount,
         },
     ];
@@ -478,19 +494,22 @@ fn test_liquidations() {
         &fixture.env,
         Request {
             request_type: RequestType::FillUserLiquidationAuction as u32,
-            address: samwise.clone(),
+            user: samwise.clone(),
+            asset: frodo.clone(),
             amount: 100,
         },
         Request {
             request_type: RequestType::Repay as u32,
-            address: fixture.tokens[TokenIndex::STABLE].address.clone(),
+            asset: fixture.tokens[TokenIndex::STABLE].address.clone(),
+            user: frodo.clone(),
             amount: usdc_bid_amount
                 .fixed_div_floor(2_0000000, SCALAR_7)
                 .unwrap(),
         },
         Request {
             request_type: RequestType::Repay as u32,
-            address: fixture.tokens[TokenIndex::XLM].address.clone(),
+            asset: fixture.tokens[TokenIndex::XLM].address.clone(),
+            user: frodo.clone(),
             amount: xlm_bid_amount.fixed_div_floor(2_0000000, SCALAR_7).unwrap(),
         },
     ];
@@ -620,7 +639,8 @@ fn test_liquidations() {
         &fixture.env,
         Request {
             request_type: RequestType::FillBadDebtAuction as u32,
-            address: fixture.backstop.address.clone(),
+            asset: fixture.backstop.address.clone(),
+            user: fixture.backstop.address.clone(), // doesn't matter
             amount: 20,
         },
     ];
@@ -729,7 +749,8 @@ fn test_liquidations() {
         &fixture.env,
         Request {
             request_type: RequestType::FillBadDebtAuction as u32,
-            address: fixture.backstop.address.clone(),
+            asset: fixture.backstop.address.clone(),
+            user: frodo.clone(),
             amount: 100,
         },
     ];
@@ -809,13 +830,15 @@ fn test_liquidations() {
         &fixture.env,
         Request {
             request_type: RequestType::SupplyCollateral as u32,
-            address: fixture.tokens[TokenIndex::WETH].address.clone(),
+            asset: fixture.tokens[TokenIndex::WETH].address.clone(),
+            user: samwise.clone(),
             amount: 1 * 10i128.pow(9),
         },
         // Sam's max borrow is 39_200 STABLE
         Request {
             request_type: RequestType::Borrow as u32,
-            address: fixture.tokens[TokenIndex::STABLE].address.clone(),
+            asset: fixture.tokens[TokenIndex::STABLE].address.clone(),
+            user: samwise.clone(),
             amount: 100 * 10i128.pow(6),
         }, // reduces Sam's max borrow to 14_526.31579 STABLE
     ];
@@ -876,7 +899,8 @@ fn test_liquidations() {
         &fixture.env,
         Request {
             request_type: RequestType::FillUserLiquidationAuction as u32,
-            address: samwise.clone(),
+            asset: samwise.clone(),
+            user: samwise.clone(),
             amount: 100,
         },
     ];
@@ -926,7 +950,8 @@ fn test_liquidations() {
         &fixture.env,
         Request {
             request_type: RequestType::Borrow as u32,
-            address: fixture.tokens[TokenIndex::STABLE].address.clone(),
+            asset: fixture.tokens[TokenIndex::STABLE].address.clone(),
+            user: frodo.clone(),
             amount: 1,
         },
     ];
@@ -959,7 +984,8 @@ fn test_liquidations() {
         &fixture.env,
         Request {
             request_type: RequestType::FillBadDebtAuction as u32,
-            address: fixture.backstop.address.clone(),
+            asset: fixture.backstop.address.clone(),
+            user: frodo.clone(),
             amount: 100,
         },
     ];
@@ -1029,12 +1055,14 @@ fn test_user_restore_position_and_delete_liquidation() {
         &fixture.env,
         Request {
             request_type: RequestType::SupplyCollateral as u32,
-            address: fixture.tokens[TokenIndex::STABLE].address.clone(),
+            asset: fixture.tokens[TokenIndex::STABLE].address.clone(),
+            user: samwise.clone(),
             amount: 1000 * 10i128.pow(6),
         },
         Request {
             request_type: RequestType::Borrow as u32,
-            address: fixture.tokens[TokenIndex::XLM].address.clone(),
+            asset: fixture.tokens[TokenIndex::XLM].address.clone(),
+            user: samwise.clone(),
             amount: 6075 * SCALAR_7,
         },
     ];
@@ -1063,7 +1091,8 @@ fn test_user_restore_position_and_delete_liquidation() {
         &fixture.env,
         Request {
             request_type: RequestType::DeleteLiquidationAuction as u32,
-            address: Address::generate(&fixture.env),
+            asset: Address::generate(&fixture.env),
+            user: samwise.clone(),
             amount: i128::MAX,
         },
     ];
@@ -1081,12 +1110,14 @@ fn test_user_restore_position_and_delete_liquidation() {
         &fixture.env,
         Request {
             request_type: RequestType::SupplyCollateral as u32,
-            address: fixture.tokens[TokenIndex::STABLE].address.clone(),
+            asset: fixture.tokens[TokenIndex::STABLE].address.clone(),
+            user: samwise.clone(),
             amount: 79 * 10i128.pow(6), // need $80 more collateral
         },
         Request {
             request_type: RequestType::DeleteLiquidationAuction as u32,
-            address: Address::generate(&fixture.env),
+            asset: Address::generate(&fixture.env),
+            user: samwise.clone(),
             amount: i128::MAX,
         },
     ];
@@ -1103,12 +1134,14 @@ fn test_user_restore_position_and_delete_liquidation() {
         &fixture.env,
         Request {
             request_type: RequestType::DeleteLiquidationAuction as u32,
-            address: Address::generate(&fixture.env),
+            asset: Address::generate(&fixture.env),
+            user: samwise.clone(),
             amount: i128::MAX,
         },
         Request {
             request_type: RequestType::Repay as u32,
-            address: fixture.tokens[TokenIndex::XLM].address.clone(),
+            asset: fixture.tokens[TokenIndex::XLM].address.clone(),
+            user: samwise.clone(),
             amount: 449 * SCALAR_7, // need to repay 450 XLM
         },
     ];
@@ -1126,17 +1159,20 @@ fn test_user_restore_position_and_delete_liquidation() {
         &fixture.env,
         Request {
             request_type: RequestType::SupplyCollateral as u32,
-            address: fixture.tokens[TokenIndex::STABLE].address.clone(),
+            asset: fixture.tokens[TokenIndex::STABLE].address.clone(),
+            user: samwise.clone(),
             amount: 41 * 10i128.pow(6),
         },
         Request {
             request_type: RequestType::DeleteLiquidationAuction as u32,
-            address: Address::generate(&fixture.env),
+            asset: Address::generate(&fixture.env),
+            user: samwise.clone(),
             amount: i128::MAX,
         },
         Request {
             request_type: RequestType::Repay as u32,
-            address: fixture.tokens[TokenIndex::XLM].address.clone(),
+            asset: fixture.tokens[TokenIndex::XLM].address.clone(),
+            user: samwise.clone(),
             amount: 226 * SCALAR_7,
         },
     ];

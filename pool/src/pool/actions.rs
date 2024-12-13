@@ -11,7 +11,8 @@ use super::User;
 #[contracttype]
 pub struct Request {
     pub request_type: u32,
-    pub address: Address, // asset address or liquidatee
+    pub asset: Address, // asset address
+    pub user: Address,  // spender, to or liquidatee
     pub amount: i128,
 }
 
@@ -53,35 +54,33 @@ impl RequestType {
     }
 }
 
-/// Transfer actions to be taken by the sender and pool
-pub struct Actions {
-    pub spender_transfer: Map<Address, i128>,
-    pub pool_transfer: Map<Address, i128>,
-}
+/// Transfer actions to be taken by the sender and pool.
+///
+/// (asset, user) -> amount
+/// If amount greater than 0 transfer must be from pool to user
+/// else from user to pool.
+pub struct Actions(pub Map<(Address, Address), i128>);
 
 impl Actions {
     /// Create an empty set of actions
     pub fn new(e: &Env) -> Self {
-        Actions {
-            spender_transfer: Map::new(e),
-            pool_transfer: Map::new(e),
-        }
+        Actions(Map::new(e))
     }
 
     /// Add tokens the sender needs to transfer to the pool
-    pub fn add_for_spender_transfer(&mut self, asset: &Address, amount: i128) {
-        self.spender_transfer.set(
-            asset.clone(),
-            amount + self.spender_transfer.get(asset.clone()).unwrap_or(0),
-        );
+    pub fn add_for_spender(&mut self, asset: &Address, user: &Address, amount: i128) {
+        self.0.set(
+            (asset.clone(), user.clone()),
+            self.0.get((asset.clone(), user.clone())).unwrap_or(0) - amount,
+        )
     }
 
     // Add tokens the pool needs to transfer to "to"
-    pub fn add_for_pool_transfer(&mut self, asset: &Address, amount: i128) {
-        self.pool_transfer.set(
-            asset.clone(),
-            amount + self.pool_transfer.get(asset.clone()).unwrap_or(0),
-        );
+    pub fn add_for_pool(&mut self, asset: &Address, user: &Address, amount: i128) {
+        self.0.set(
+            (asset.clone(), user.clone()),
+            amount + self.0.get((asset.clone(), user.clone())).unwrap_or(0),
+        )
     }
 }
 
@@ -117,22 +116,22 @@ pub fn build_actions_from_request(
         pool.require_action_allowed(e, request.request_type);
         match RequestType::from_u32(e, request.request_type) {
             RequestType::Supply => {
-                let mut reserve = pool.load_reserve(e, &request.address, true);
+                let mut reserve = pool.load_reserve(e, &request.asset, true);
                 let b_tokens_minted = reserve.to_b_token_down(request.amount);
                 from_state.add_supply(e, &mut reserve, b_tokens_minted);
-                actions.add_for_spender_transfer(&reserve.asset, request.amount);
+                actions.add_for_spender(&request.asset, &request.user, request.amount);
                 pool.cache_reserve(reserve);
                 e.events().publish(
                     (
                         Symbol::new(e, "supply"),
-                        request.address.clone(),
+                        request.asset.clone(),
                         from.clone(),
                     ),
                     (request.amount, b_tokens_minted),
                 );
             }
             RequestType::Withdraw => {
-                let mut reserve = pool.load_reserve(e, &request.address, true);
+                let mut reserve = pool.load_reserve(e, &request.asset, true);
                 let cur_b_tokens = from_state.get_supply(reserve.index);
                 let mut to_burn = reserve.to_b_token_up(request.amount);
                 let mut tokens_out = request.amount;
@@ -141,34 +140,34 @@ pub fn build_actions_from_request(
                     tokens_out = reserve.to_asset_from_b_token(cur_b_tokens);
                 }
                 from_state.remove_supply(e, &mut reserve, to_burn);
-                actions.add_for_pool_transfer(&reserve.asset, tokens_out);
+                actions.add_for_pool(&request.asset, &request.user, tokens_out);
                 pool.cache_reserve(reserve);
                 e.events().publish(
                     (
                         Symbol::new(e, "withdraw"),
-                        request.address.clone(),
+                        request.asset.clone(),
                         from.clone(),
                     ),
                     (tokens_out, to_burn),
                 );
             }
             RequestType::SupplyCollateral => {
-                let mut reserve = pool.load_reserve(e, &request.address, true);
+                let mut reserve = pool.load_reserve(e, &request.asset, true);
                 let b_tokens_minted = reserve.to_b_token_down(request.amount);
                 from_state.add_collateral(e, &mut reserve, b_tokens_minted);
-                actions.add_for_spender_transfer(&reserve.asset, request.amount);
+                actions.add_for_spender(&request.asset, &request.user, request.amount);
                 pool.cache_reserve(reserve);
                 e.events().publish(
                     (
                         Symbol::new(e, "supply_collateral"),
-                        request.address.clone(),
+                        request.asset.clone(),
                         from.clone(),
                     ),
                     (request.amount, b_tokens_minted),
                 );
             }
             RequestType::WithdrawCollateral => {
-                let mut reserve = pool.load_reserve(e, &request.address, true);
+                let mut reserve = pool.load_reserve(e, &request.asset, true);
                 let cur_b_tokens = from_state.get_collateral(reserve.index);
                 let mut to_burn = reserve.to_b_token_up(request.amount);
                 let mut tokens_out = request.amount;
@@ -177,50 +176,50 @@ pub fn build_actions_from_request(
                     tokens_out = reserve.to_asset_from_b_token(cur_b_tokens);
                 }
                 from_state.remove_collateral(e, &mut reserve, to_burn);
-                actions.add_for_pool_transfer(&reserve.asset, tokens_out);
+                actions.add_for_pool(&request.asset, &request.user, tokens_out);
                 check_health = true;
                 pool.cache_reserve(reserve);
                 e.events().publish(
                     (
                         Symbol::new(e, "withdraw_collateral"),
-                        request.address.clone(),
+                        request.asset.clone(),
                         from.clone(),
                     ),
                     (tokens_out, to_burn),
                 );
             }
             RequestType::Borrow => {
-                let mut reserve = pool.load_reserve(e, &request.address, true);
+                let mut reserve = pool.load_reserve(e, &request.asset, true);
                 let d_tokens_minted = reserve.to_d_token_up(request.amount);
                 from_state.add_liabilities(e, &mut reserve, d_tokens_minted);
                 reserve.require_utilization_below_max(e);
-                actions.add_for_pool_transfer(&reserve.asset, request.amount);
+                actions.add_for_pool(&request.asset, &request.user, request.amount);
                 check_health = true;
                 pool.cache_reserve(reserve);
                 e.events().publish(
                     (
                         Symbol::new(e, "borrow"),
-                        request.address.clone(),
+                        request.asset.clone(),
                         from.clone(),
                     ),
                     (request.amount, d_tokens_minted),
                 );
             }
             RequestType::Repay => {
-                let mut reserve = pool.load_reserve(e, &request.address, true);
+                let mut reserve = pool.load_reserve(e, &request.asset, true);
                 let cur_d_tokens = from_state.get_liabilities(reserve.index);
                 let d_tokens_burnt = reserve.to_d_token_down(request.amount);
-                actions.add_for_spender_transfer(&reserve.asset, request.amount);
+                actions.add_for_spender(&request.asset, &request.user, request.amount);
                 if d_tokens_burnt > cur_d_tokens {
                     let amount_to_refund =
                         request.amount - reserve.to_asset_from_d_token(cur_d_tokens);
                     require_nonnegative(e, &amount_to_refund);
                     from_state.remove_liabilities(e, &mut reserve, cur_d_tokens);
-                    actions.add_for_pool_transfer(&reserve.asset, amount_to_refund);
+                    actions.add_for_pool(&request.asset, &request.user, amount_to_refund);
                     e.events().publish(
                         (
                             Symbol::new(e, "repay"),
-                            request.address.clone().clone(),
+                            request.asset.clone().clone(),
                             from.clone(),
                         ),
                         (request.amount - amount_to_refund, cur_d_tokens),
@@ -230,7 +229,7 @@ pub fn build_actions_from_request(
                     e.events().publish(
                         (
                             Symbol::new(e, "repay"),
-                            request.address.clone().clone(),
+                            request.asset.clone().clone(),
                             from.clone(),
                         ),
                         (request.amount, d_tokens_burnt),
@@ -243,7 +242,7 @@ pub fn build_actions_from_request(
                     e,
                     pool,
                     0,
-                    &request.address,
+                    &request.user,
                     &mut from_state,
                     request.amount as u64,
                 );
@@ -252,7 +251,7 @@ pub fn build_actions_from_request(
                 e.events().publish(
                     (
                         Symbol::new(e, "fill_auction"),
-                        request.address.clone().clone(),
+                        request.user.clone().clone(),
                         0_u32,
                     ),
                     (from.clone(), request.amount),
@@ -264,7 +263,7 @@ pub fn build_actions_from_request(
                     e,
                     pool,
                     1,
-                    &request.address,
+                    &request.asset,
                     &mut from_state,
                     request.amount as u64,
                 );
@@ -273,7 +272,7 @@ pub fn build_actions_from_request(
                 e.events().publish(
                     (
                         Symbol::new(e, "fill_auction"),
-                        request.address.clone().clone(),
+                        request.asset.clone().clone(),
                         1_u32,
                     ),
                     (from.clone(), request.amount),
@@ -285,14 +284,14 @@ pub fn build_actions_from_request(
                     e,
                     pool,
                     2,
-                    &request.address,
+                    &request.asset,
                     &mut from_state,
                     request.amount as u64,
                 );
                 e.events().publish(
                     (
                         Symbol::new(e, "fill_auction"),
-                        request.address.clone().clone(),
+                        request.asset.clone().clone(),
                         2_u32,
                     ),
                     (from.clone(), request.amount),
@@ -376,7 +375,8 @@ mod tests {
                 &e,
                 Request {
                     request_type: RequestType::Supply as u32,
-                    address: underlying.clone(),
+                    user: samwise.clone(),
+                    asset: underlying.clone(),
                     amount: 10_1234567,
                 },
             ];
@@ -385,14 +385,11 @@ mod tests {
 
             assert_eq!(health_check, false);
 
-            let spender_transfer = actions.spender_transfer;
-            let pool_transfer = actions.pool_transfer;
-            assert_eq!(spender_transfer.len(), 1);
+            assert_eq!(actions.0.len(), 1);
             assert_eq!(
-                spender_transfer.get_unchecked(underlying.clone()),
+                actions.0.get_unchecked((underlying.clone(), samwise.clone())).abs(),
                 10_1234567
             );
-            assert_eq!(pool_transfer.len(), 0);
 
             let positions = user.positions.clone();
             assert_eq!(positions.liabilities.len(), 0);
@@ -452,7 +449,8 @@ mod tests {
                 &e,
                 Request {
                     request_type: RequestType::Withdraw as u32,
-                    address: underlying.clone(),
+                    asset: underlying.clone(),
+                    user: samwise.clone(),
                     amount: 10_1234567,
                 },
             ];
@@ -461,11 +459,8 @@ mod tests {
 
             assert_eq!(health_check, false);
 
-            let spender_transfer = actions.spender_transfer;
-            let pool_transfer = actions.pool_transfer;
-            assert_eq!(spender_transfer.len(), 0);
-            assert_eq!(pool_transfer.len(), 1);
-            assert_eq!(pool_transfer.get_unchecked(underlying.clone()), 10_1234567);
+            assert_eq!(actions.0.len(), 1);
+            assert_eq!(actions.0.get_unchecked((underlying.clone(), samwise.clone())), 10_1234567);
 
             let positions = user.positions.clone();
             assert_eq!(positions.liabilities.len(), 0);
@@ -525,7 +520,8 @@ mod tests {
                 &e,
                 Request {
                     request_type: RequestType::Withdraw as u32,
-                    address: underlying.clone(),
+                    asset: underlying.clone(),
+                    user: samwise.clone(),
                     amount: 21_0000000,
                 },
             ];
@@ -534,11 +530,8 @@ mod tests {
 
             assert_eq!(health_check, false);
 
-            let spender_transfer = actions.spender_transfer;
-            let pool_transfer = actions.pool_transfer;
-            assert_eq!(spender_transfer.len(), 0);
-            assert_eq!(pool_transfer.len(), 1);
-            assert_eq!(pool_transfer.get_unchecked(underlying.clone()), 20_0000137);
+            assert_eq!(actions.0.len(), 1);
+            assert_eq!(actions.0.get_unchecked((underlying.clone(), samwise)), 20_0000137);
 
             let positions = user.positions.clone();
             assert_eq!(positions.liabilities.len(), 0);
@@ -590,7 +583,8 @@ mod tests {
                 &e,
                 Request {
                     request_type: RequestType::SupplyCollateral as u32,
-                    address: underlying.clone(),
+                    asset: underlying.clone(),
+                    user: samwise.clone(),
                     amount: 10_1234567,
                 },
             ];
@@ -599,14 +593,11 @@ mod tests {
 
             assert_eq!(health_check, false);
 
-            let spender_transfer = actions.spender_transfer;
-            let pool_transfer = actions.pool_transfer;
-            assert_eq!(spender_transfer.len(), 1);
+            assert_eq!(actions.0.len(), 1);
             assert_eq!(
-                spender_transfer.get_unchecked(underlying.clone()),
-                10_1234567
+                actions.0.get_unchecked((underlying.clone(), samwise)),
+                -10_1234567
             );
-            assert_eq!(pool_transfer.len(), 0);
 
             let positions = user.positions.clone();
             assert_eq!(positions.liabilities.len(), 0);
@@ -668,7 +659,8 @@ mod tests {
                 &e,
                 Request {
                     request_type: RequestType::WithdrawCollateral as u32,
-                    address: underlying.clone(),
+                    asset: underlying.clone(),
+                    user: samwise.clone(),
                     amount: 10_1234567,
                 },
             ];
@@ -677,11 +669,8 @@ mod tests {
 
             assert_eq!(health_check, true);
 
-            let spender_transfer = actions.spender_transfer;
-            let pool_transfer = actions.pool_transfer;
-            assert_eq!(spender_transfer.len(), 0);
-            assert_eq!(pool_transfer.len(), 1);
-            assert_eq!(pool_transfer.get_unchecked(underlying.clone()), 10_1234567);
+            assert_eq!(actions.0.len(), 1);
+            assert_eq!(actions.0.get_unchecked((underlying.clone(), samwise)), 10_1234567);
 
             let positions = user.positions.clone();
             assert_eq!(positions.liabilities.len(), 0);
@@ -741,7 +730,8 @@ mod tests {
                 &e,
                 Request {
                     request_type: RequestType::WithdrawCollateral as u32,
-                    address: underlying.clone(),
+                    asset: underlying.clone(),
+                    user: samwise.clone(),
                     amount: 21_0000000,
                 },
             ];
@@ -750,11 +740,8 @@ mod tests {
 
             assert_eq!(health_check, true);
 
-            let spender_transfer = actions.spender_transfer;
-            let pool_transfer = actions.pool_transfer;
-            assert_eq!(spender_transfer.len(), 0);
-            assert_eq!(pool_transfer.len(), 1);
-            assert_eq!(pool_transfer.get_unchecked(underlying.clone()), 20_0000137);
+            assert_eq!(actions.0.len(), 1);
+            assert_eq!(actions.0.get_unchecked((underlying.clone(), samwise)), 20_0000137);
 
             let positions = user.positions.clone();
             assert_eq!(positions.liabilities.len(), 0);
@@ -805,7 +792,8 @@ mod tests {
                 &e,
                 Request {
                     request_type: RequestType::Borrow as u32,
-                    address: underlying.clone(),
+                    asset: underlying.clone(),
+                    user: samwise.clone(),
                     amount: 10_1234567,
                 },
             ];
@@ -813,11 +801,8 @@ mod tests {
                 build_actions_from_request(&e, &mut pool, &samwise, requests);
             assert_eq!(health_check, true);
 
-            let spender_transfer = actions.spender_transfer;
-            let pool_transfer = actions.pool_transfer;
-            assert_eq!(spender_transfer.len(), 0);
-            assert_eq!(pool_transfer.len(), 1);
-            assert_eq!(pool_transfer.get_unchecked(underlying.clone()), 10_1234567);
+            assert_eq!(actions.0.len(), 1);
+            assert_eq!(actions.0.get_unchecked((underlying.clone(), samwise)), 10_1234567);
 
             let positions = user.positions.clone();
             assert_eq!(positions.liabilities.len(), 1);
@@ -876,7 +861,8 @@ mod tests {
                 &e,
                 Request {
                     request_type: RequestType::Repay as u32,
-                    address: underlying.clone(),
+                    asset: underlying.clone(),
+                    user: samwise.clone(),
                     amount: 10_1234567,
                 },
             ];
@@ -885,14 +871,11 @@ mod tests {
 
             assert_eq!(health_check, false);
 
-            let spender_transfer = actions.spender_transfer;
-            let pool_transfer = actions.pool_transfer;
-            assert_eq!(spender_transfer.len(), 1);
+            assert_eq!(actions.0.len(), 1);
             assert_eq!(
-                spender_transfer.get_unchecked(underlying.clone()),
-                10_1234567
+                actions.0.get_unchecked((underlying.clone(), samwise)),
+                -10_1234567
             );
-            assert_eq!(pool_transfer.len(), 0);
 
             let positions = user.positions.clone();
             assert_eq!(positions.liabilities.len(), 1);
@@ -950,7 +933,8 @@ mod tests {
                 &e,
                 Request {
                     request_type: RequestType::Repay as u32,
-                    address: underlying.clone(),
+                    asset: underlying.clone(),
+                    user: samwise.clone(),
                     amount: 21_0000000,
                 },
             ];
@@ -959,15 +943,11 @@ mod tests {
 
             assert_eq!(health_check, false);
 
-            let spender_transfer = actions.spender_transfer;
-            let pool_transfer = actions.pool_transfer;
-            assert_eq!(spender_transfer.len(), 1);
+            assert_eq!(actions.0.len(), 1);
             assert_eq!(
-                spender_transfer.get_unchecked(underlying.clone()),
-                21_0000000
+                actions.0.get_unchecked((underlying.clone(), samwise.clone())),
+                0_9999771 - 21_0000000 
             );
-            assert_eq!(pool_transfer.len(), 1);
-            assert_eq!(pool_transfer.get_unchecked(underlying.clone()), 0_9999771);
 
             let positions = user.positions.clone();
             assert_eq!(positions.liabilities.len(), 0);
@@ -1026,32 +1006,38 @@ mod tests {
                 &e,
                 Request {
                     request_type: RequestType::Supply as u32,
-                    address: underlying.clone(),
+                    asset: underlying.clone(),
+                    user: samwise.clone(),
                     amount: 10_0000000,
                 },
                 Request {
                     request_type: RequestType::Withdraw as u32,
-                    address: underlying.clone(),
+                    asset: underlying.clone(),
+                    user: samwise.clone(),
                     amount: 5_0000000,
                 },
                 Request {
                     request_type: RequestType::SupplyCollateral as u32,
-                    address: underlying.clone(),
+                    asset: underlying.clone(),
+                    user: samwise.clone(),
                     amount: 10_0000000,
                 },
                 Request {
                     request_type: RequestType::WithdrawCollateral as u32,
-                    address: underlying.clone(),
+                    asset: underlying.clone(),
+                    user: samwise.clone(),
                     amount: 5_0000000,
                 },
                 Request {
                     request_type: RequestType::Borrow as u32,
-                    address: underlying.clone(),
+                    asset: underlying.clone(),
+                    user: samwise.clone(),
                     amount: 20_0000000,
                 },
                 Request {
                     request_type: RequestType::Repay as u32,
-                    address: underlying.clone(),
+                    asset: underlying.clone(),
+                    user: samwise.clone(),
                     amount: 21_0000000,
                 },
             ];
@@ -1060,17 +1046,10 @@ mod tests {
 
             assert_eq!(health_check, true);
 
-            let spender_transfer = actions.spender_transfer;
-            let pool_transfer = actions.pool_transfer;
-            assert_eq!(spender_transfer.len(), 1);
+            assert_eq!(actions.0.len(), 1);
             assert_eq!(
-                spender_transfer.get_unchecked(underlying.clone()),
-                10_0000000 + 10_0000000 + 21_0000000
-            );
-            assert_eq!(pool_transfer.len(), 1);
-            assert_eq!(
-                pool_transfer.get_unchecked(underlying.clone()),
-                5_0000000 + 5_0000000 + 20_0000000 + 1_0000000
+                actions.0.get_unchecked((underlying.clone(), samwise)),
+                (5_0000000 + 5_0000000 + 20_0000000 + 1_0000000) - (10_0000000 + 10_0000000 + 21_0000000)
             );
 
             let positions = user.positions.clone();
@@ -1191,11 +1170,12 @@ mod tests {
                 &e,
                 Request {
                     request_type: RequestType::FillUserLiquidationAuction as u32,
-                    address: samwise.clone(),
+                    asset: samwise.clone(), // doesn't matter
+                    user: samwise.clone(),
                     amount: 50,
                 },
             ];
-            let (actions, _, health_check) =
+            let (_, _, health_check) =
                 build_actions_from_request(&e, &mut pool, &frodo, requests);
 
             assert_eq!(health_check, true);
@@ -1213,8 +1193,6 @@ mod tests {
             assert_eq!(exp_new_auction.bid, new_auction.bid);
             assert_eq!(exp_new_auction.lot, new_auction.lot);
             assert_eq!(exp_new_auction.block, new_auction.block);
-            assert_eq!(actions.pool_transfer.len(), 0);
-            assert_eq!(actions.spender_transfer.len(), 0);
         });
     }
 
@@ -1323,11 +1301,12 @@ mod tests {
                 &e,
                 Request {
                     request_type: RequestType::FillBadDebtAuction as u32,
-                    address: backstop_address.clone(),
+                    asset: backstop_address.clone(),
+                    user: backstop_address.clone(), // doesn't matter
                     amount: 100,
                 },
             ];
-            let (actions, _, health_check) =
+            let (_, _, health_check) =
                 build_actions_from_request(&e, &mut pool, &frodo, requests);
 
             assert_eq!(health_check, true);
@@ -1335,8 +1314,6 @@ mod tests {
                 storage::has_auction(&e, &(AuctionType::BadDebtAuction as u32), &backstop_address),
                 false
             );
-            assert_eq!(actions.pool_transfer.len(), 0);
-            assert_eq!(actions.spender_transfer.len(), 0);
         });
     }
 
@@ -1463,7 +1440,8 @@ mod tests {
                 &e,
                 Request {
                     request_type: RequestType::FillInterestAuction as u32,
-                    address: backstop_address.clone(),
+                    asset: backstop_address.clone(),
+                    user: backstop_address.clone(), // doesn't matter
                     amount: 100,
                 },
             ];
@@ -1487,8 +1465,7 @@ mod tests {
                 ),
                 false
             );
-            assert_eq!(actions.pool_transfer.len(), 0);
-            assert_eq!(actions.spender_transfer.len(), 0);
+            assert_eq!(actions.0.len(), 0);
         });
     }
 
@@ -1549,7 +1526,8 @@ mod tests {
                 &e,
                 Request {
                     request_type: RequestType::DeleteLiquidationAuction as u32,
-                    address: Address::generate(&e),
+                    user: Address::generate(&e),
+                    asset: Address::generate(&e),
                     amount: 0,
                 },
             ];
@@ -1561,8 +1539,7 @@ mod tests {
                 storage::has_auction(&e, &(AuctionType::UserLiquidation as u32), &samwise),
                 false
             );
-            assert_eq!(actions.pool_transfer.len(), 0);
-            assert_eq!(actions.spender_transfer.len(), 0);
+            assert_eq!(actions.0.len(), 0);
         });
     }
 
@@ -1618,7 +1595,8 @@ mod tests {
                 &e,
                 Request {
                     request_type: RequestType::WithdrawCollateral as u32,
-                    address: underlying_1.clone(),
+                    asset: underlying_1.clone(),
+                    user: samwise.clone(),
                     amount: 20,
                 },
             ];
@@ -1675,7 +1653,8 @@ mod tests {
                 &e,
                 Request {
                     request_type: RequestType::Borrow as u32,
-                    address: underlying.clone(),
+                    asset: underlying.clone(),
+                    user: samwise.clone(),
                     amount: 1_0000000,
                 },
             ];

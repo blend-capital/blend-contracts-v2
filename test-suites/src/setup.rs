@@ -90,12 +90,14 @@ pub fn create_fixture_with_data<'a>(wasm: bool) -> TestFixture<'a> {
         &fixture.env,
         Request {
             request_type: RequestType::SupplyCollateral as u32,
-            address: fixture.tokens[TokenIndex::STABLE].address.clone(),
+            asset: fixture.tokens[TokenIndex::STABLE].address.clone(),
+            user: frodo.clone(),
             amount: 10_000 * 10i128.pow(6),
         },
         Request {
             request_type: RequestType::Borrow as u32,
-            address: fixture.tokens[TokenIndex::STABLE].address.clone(),
+            asset: fixture.tokens[TokenIndex::STABLE].address.clone(),
+            user: frodo.clone(),
             amount: 8_000 * 10i128.pow(6),
         },
     ];
@@ -106,12 +108,14 @@ pub fn create_fixture_with_data<'a>(wasm: bool) -> TestFixture<'a> {
         &fixture.env,
         Request {
             request_type: RequestType::SupplyCollateral as u32,
-            address: fixture.tokens[TokenIndex::WETH].address.clone(),
+            asset: fixture.tokens[TokenIndex::WETH].address.clone(),
+            user: frodo.clone(),
             amount: 10 * 10i128.pow(9),
         },
         Request {
             request_type: RequestType::Borrow as u32,
-            address: fixture.tokens[TokenIndex::WETH].address.clone(),
+            asset: fixture.tokens[TokenIndex::WETH].address.clone(),
+            user: frodo.clone(),
             amount: 5 * 10i128.pow(9),
         },
     ];
@@ -122,12 +126,14 @@ pub fn create_fixture_with_data<'a>(wasm: bool) -> TestFixture<'a> {
         &fixture.env,
         Request {
             request_type: RequestType::SupplyCollateral as u32,
-            address: fixture.tokens[TokenIndex::XLM].address.clone(),
+            asset: fixture.tokens[TokenIndex::XLM].address.clone(),
+            user: frodo.clone(),
             amount: 100_000 * SCALAR_7,
         },
         Request {
             request_type: RequestType::Borrow as u32,
-            address: fixture.tokens[TokenIndex::XLM].address.clone(),
+            asset: fixture.tokens[TokenIndex::XLM].address.clone(),
+            user: frodo.clone(),
             amount: 65_000 * SCALAR_7,
         },
     ];

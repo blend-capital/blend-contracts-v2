@@ -19,7 +19,8 @@ fn test_pool_deposit_overflow_panics() {
     fixture.tokens[TokenIndex::STABLE].mint(&samwise, &(i128::MAX));
     let request = Request {
         request_type: RequestType::Supply as u32,
-        address: fixture.tokens[TokenIndex::STABLE].address.clone(),
+        asset: fixture.tokens[TokenIndex::STABLE].address.clone(),
+        user: samwise.clone(),
         amount: i128::MAX - 10,
     };
 
@@ -48,12 +49,14 @@ fn test_auction_underflow_panics() {
         &fixture.env,
         Request {
             request_type: RequestType::SupplyCollateral as u32,
-            address: fixture.tokens[TokenIndex::XLM].address.clone(),
+            asset: fixture.tokens[TokenIndex::XLM].address.clone(),
+            user: samwise.clone(),
             amount: 6_000 * SCALAR_7,
         },
         Request {
             request_type: RequestType::Borrow as u32,
-            address: fixture.tokens[TokenIndex::STABLE].address.clone(),
+            asset: fixture.tokens[TokenIndex::STABLE].address.clone(),
+            user: samwise.clone(),
             amount: 200 * 10i128.pow(6),
         },
     ];
@@ -86,12 +89,14 @@ fn test_auction_underflow_panics() {
         &fixture.env,
         Request {
             request_type: RequestType::FillUserLiquidationAuction as u32,
-            address: samwise.clone(),
+            asset: fixture.tokens[TokenIndex::STABLE].address.clone(),
+            user: samwise.clone(),
             amount: 1,
         },
         Request {
             request_type: RequestType::Repay as u32,
-            address: fixture.tokens[TokenIndex::STABLE].address.clone(),
+            asset: fixture.tokens[TokenIndex::STABLE].address.clone(),
+            user:frodo.clone(),
             amount: usdc_bid_amount,
         },
     ];

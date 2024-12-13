@@ -357,7 +357,7 @@ impl Pool for PoolContract {
         e: Env,
         from: Address,
         spender: Address,
-        to: Address,
+        _to: Address,
         requests: Vec<Request>,
     ) -> Positions {
         storage::extend_instance(&e);
@@ -366,7 +366,7 @@ impl Pool for PoolContract {
             from.require_auth();
         }
 
-        pool::execute_submit(&e, &from, &spender, &to, requests)
+        pool::execute_submit(&e, &from, requests)
     }
 
     fn bad_debt(e: Env, user: Address) {
