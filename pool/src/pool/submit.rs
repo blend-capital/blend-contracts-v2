@@ -23,14 +23,9 @@ use super::{
 pub fn execute_submit(
     e: &Env,
     from: &Address,
-    spender: &Address,
-    to: &Address,
     requests: Vec<Request>,
 ) -> Positions {
-    if from == &e.current_contract_address()
-        || spender == &e.current_contract_address()
-        || to == &e.current_contract_address()
-    {
+    if from == &e.current_contract_address() {
         panic_with_error!(e, &PoolError::BadRequest);
     }
     let mut pool = Pool::load(e);
@@ -48,18 +43,21 @@ pub fn execute_submit(
         panic_with_error!(e, PoolError::InvalidHf);
     }
 
-    // transfer tokens from sender to pool
-    for (address, amount) in actions.spender_transfer.iter() {
-        TokenClient::new(e, &address).transfer(spender, &e.current_contract_address(), &amount);
-    }
-
     // store updated info to ledger
     pool.store_cached_reserves(e);
     new_from_state.store(e);
 
     // transfer tokens from pool to "to"
-    for (address, amount) in actions.pool_transfer.iter() {
-        TokenClient::new(e, &address).transfer(&e.current_contract_address(), to, &amount);
+    for ((asset, user), amount) in actions.0.iter() {
+        // check user is not this contract
+        if user.clone() == e.current_contract_address() {
+            panic_with_error!(e, &PoolError::BadRequest);
+        }
+        if amount > 0 {
+            TokenClient::new(e, &asset).transfer(&e.current_contract_address(), &user, &amount);
+        } else if amount < 0 {
+            TokenClient::new(e, &asset).transfer(&user, &e.current_contract_address(), &amount.abs());
+        }
     }
 
     new_from_state.positions
@@ -143,16 +141,18 @@ mod tests {
                 &e,
                 Request {
                     request_type: RequestType::SupplyCollateral as u32,
-                    address: underlying_0,
+                    asset: underlying_0,
+                    user: frodo.clone(),
                     amount: 15_0000000,
                 },
                 Request {
                     request_type: RequestType::Borrow as u32,
-                    address: underlying_1,
+                    asset: underlying_1,
+                    user: merry.clone(),
                     amount: 1_5000000,
                 },
             ];
-            let positions = execute_submit(&e, &samwise, &frodo, &merry, requests);
+            let positions = execute_submit(&e, &samwise, requests);
 
             assert_eq!(positions.liabilities.len(), 1);
             assert_eq!(positions.collateral.len(), 1);
@@ -225,22 +225,25 @@ mod tests {
                 &e,
                 Request {
                     request_type: RequestType::SupplyCollateral as u32,
-                    address: underlying_0,
+                    asset: underlying_0,
+                    user: frodo.clone(),
                     amount: 15_0000000,
                 },
                 // force check_health to true
                 Request {
                     request_type: RequestType::Borrow as u32,
-                    address: underlying_1.clone(),
+                    asset: underlying_1.clone(),
+                    user: frodo.clone(),
                     amount: 1_5000000,
                 },
                 Request {
                     request_type: RequestType::Repay as u32,
-                    address: underlying_1,
+                    asset: underlying_1,
+                    user: frodo.clone(),
                     amount: 1_5000001,
                 },
             ];
-            let positions = execute_submit(&e, &samwise, &frodo, &frodo, requests);
+            let positions = execute_submit(&e, &samwise, requests);
 
             assert_eq!(positions.liabilities.len(), 0);
             assert_eq!(positions.collateral.len(), 1);
@@ -320,16 +323,18 @@ mod tests {
                 &e,
                 Request {
                     request_type: RequestType::SupplyCollateral as u32,
-                    address: underlying_0,
+                    asset: underlying_0,
+                    user: frodo.clone(),
                     amount: 15_0000000,
                 },
                 Request {
                     request_type: RequestType::Borrow as u32,
-                    address: underlying_1,
+                    asset: underlying_1,
+                    user: merry.clone(),
                     amount: 1_7500000,
                 },
             ];
-            execute_submit(&e, &samwise, &frodo, &merry, requests);
+            execute_submit(&e, &samwise, requests);
         });
     }
 
@@ -385,11 +390,12 @@ mod tests {
                 &e,
                 Request {
                     request_type: RequestType::SupplyCollateral as u32,
-                    address: underlying_0,
+                    asset: underlying_0,
+                    user: samwise.clone(),
                     amount: 15_0000000,
                 },
             ];
-            execute_submit(&e, &pool, &samwise, &samwise, requests);
+            execute_submit(&e, &pool, requests);
         });
     }
 
@@ -445,11 +451,12 @@ mod tests {
                 &e,
                 Request {
                     request_type: RequestType::SupplyCollateral as u32,
-                    address: underlying_0,
+                    asset: underlying_0,
+                    user: pool.clone(),
                     amount: 15_0000000,
                 },
             ];
-            execute_submit(&e, &samwise, &pool, &samwise, requests);
+            execute_submit(&e, &samwise, requests);
         });
     }
 
@@ -505,11 +512,12 @@ mod tests {
                 &e,
                 Request {
                     request_type: RequestType::SupplyCollateral as u32,
-                    address: underlying_0,
+                    asset: underlying_0,
+                    user: pool.clone(),
                     amount: 15_0000000,
                 },
             ];
-            execute_submit(&e, &samwise, &samwise, &pool, requests);
+            execute_submit(&e, &samwise, requests);
         });
     }
 }

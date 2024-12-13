@@ -46,7 +46,8 @@ fn test_pool_inflation_attack() {
         &fixture.env,
         Request {
             request_type: RequestType::Supply as u32,
-            address: fixture.tokens[TokenIndex::XLM].address.clone(),
+            asset: fixture.tokens[TokenIndex::XLM].address.clone(),
+            user: sauron.clone(),
             amount: 1,
         },
     ];
@@ -71,7 +72,8 @@ fn test_pool_inflation_attack() {
         &fixture.env,
         Request {
             request_type: RequestType::Supply as u32,
-            address: fixture.tokens[TokenIndex::XLM].address.clone(),
+            asset: fixture.tokens[TokenIndex::XLM].address.clone(),
+            user: pippen.clone(),
             amount: attack_amount,
         },
     ];
@@ -87,7 +89,8 @@ fn test_pool_inflation_attack() {
         &fixture.env,
         Request {
             request_type: RequestType::Withdraw as u32,
-            address: fixture.tokens[TokenIndex::XLM].address.clone(),
+            asset: fixture.tokens[TokenIndex::XLM].address.clone(),
+            user: sauron.clone(),
             amount: attack_amount + inflation_amount,
         },
     ];
@@ -99,7 +102,8 @@ fn test_pool_inflation_attack() {
         &fixture.env,
         Request {
             request_type: RequestType::Withdraw as u32,
-            address: fixture.tokens[TokenIndex::XLM].address.clone(),
+            asset: fixture.tokens[TokenIndex::XLM].address.clone(),
+            user: pippen.clone(),
             amount: attack_amount + inflation_amount,
         },
     ];

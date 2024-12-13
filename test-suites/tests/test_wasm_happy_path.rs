@@ -52,7 +52,8 @@ fn test_wasm_happy_path() {
             &fixture.env,
             Request {
                 request_type: RequestType::SupplyCollateral as u32,
-                address: stable.address.clone(),
+                asset: stable.address.clone(),
+                user: merry.clone(),
                 amount,
             },
         ],
@@ -84,7 +85,8 @@ fn test_wasm_happy_path() {
             &fixture.env,
             Request {
                 request_type: RequestType::SupplyCollateral as u32,
-                address: xlm.address.clone(),
+                asset: xlm.address.clone(),
+                user: sam.clone(),
                 amount,
             },
         ],
@@ -113,7 +115,8 @@ fn test_wasm_happy_path() {
             &fixture.env,
             Request {
                 request_type: RequestType::Borrow as u32,
-                address: stable.address.clone(),
+                asset: stable.address.clone(),
+                user: sam.clone(),
                 amount,
             },
         ],
@@ -145,7 +148,8 @@ fn test_wasm_happy_path() {
             &fixture.env,
             Request {
                 request_type: RequestType::Borrow as u32,
-                address: xlm.address.clone(),
+                asset: xlm.address.clone(),
+                user: merry.clone(),
                 amount,
             },
         ],
@@ -248,7 +252,8 @@ fn test_wasm_happy_path() {
             &fixture.env,
             Request {
                 request_type: RequestType::Repay as u32,
-                address: stable.address.clone(),
+                asset: stable.address.clone(),
+                user: sam.clone(),
                 amount,
             },
         ],
@@ -280,7 +285,8 @@ fn test_wasm_happy_path() {
             &fixture.env,
             Request {
                 request_type: RequestType::Repay as u32,
-                address: xlm.address.clone(),
+                asset: xlm.address.clone(),
+                user: merry.clone(),
                 amount,
             },
         ],
@@ -309,7 +315,8 @@ fn test_wasm_happy_path() {
             &fixture.env,
             Request {
                 request_type: RequestType::WithdrawCollateral as u32,
-                address: xlm.address.clone(),
+                asset: xlm.address.clone(),
+                user: sam.clone(),
                 amount,
             },
         ],
@@ -338,7 +345,8 @@ fn test_wasm_happy_path() {
             &fixture.env,
             Request {
                 request_type: RequestType::WithdrawCollateral as u32,
-                address: stable.address.clone(),
+                asset: stable.address.clone(),
+                user: merry.clone(),
                 amount,
             },
         ],
@@ -474,7 +482,8 @@ fn test_wasm_happy_path() {
             &fixture.env,
             Request {
                 request_type: RequestType::Repay as u32,
-                address: stable.address.clone(),
+                asset: stable.address.clone(),
+                user: sam.clone(),
                 amount: amount,
             },
         ],
@@ -506,7 +515,8 @@ fn test_wasm_happy_path() {
             &fixture.env,
             Request {
                 request_type: RequestType::Repay as u32,
-                address: xlm.address.clone(),
+                asset: xlm.address.clone(),
+                user: merry.clone(),
                 amount: amount,
             },
         ],
@@ -539,7 +549,8 @@ fn test_wasm_happy_path() {
             &fixture.env,
             Request {
                 request_type: RequestType::WithdrawCollateral as u32,
-                address: xlm.address.clone(),
+                asset: xlm.address.clone(),
+                user: sam.clone(),
                 amount: amount,
             },
         ],
@@ -567,7 +578,8 @@ fn test_wasm_happy_path() {
             &fixture.env,
             Request {
                 request_type: RequestType::WithdrawCollateral as u32,
-                address: stable.address.clone(),
+                asset: stable.address.clone(),
+                user: merry.clone(),
                 amount: amount,
             },
         ],

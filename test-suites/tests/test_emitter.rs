@@ -121,7 +121,8 @@ fn test_emitter_no_reward_zone() {
         &fixture.env,
         Request {
             request_type: RequestType::SupplyCollateral as u32,
-            address: fixture.tokens[TokenIndex::XLM].address.clone(),
+            asset: fixture.tokens[TokenIndex::XLM].address.clone(),
+            user: frodo.clone(),
             amount: 100_000 * SCALAR_7,
         },
     ];
