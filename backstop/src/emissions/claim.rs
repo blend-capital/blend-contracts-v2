@@ -80,7 +80,7 @@ mod tests {
 
     use crate::{
         backstop::{PoolBalance, UserBalance},
-        storage::{BackstopEmissionConfig, BackstopEmissionsData, UserEmissionData},
+        storage::{BackstopEmissionData, UserEmissionData},
         testutils::{create_backstop, create_blnd_token, create_comet_lp_pool, create_usdc_token},
     };
 
@@ -120,11 +120,10 @@ mod tests {
         let (blnd_address, blnd_token_client) = create_blnd_token(&e, &backstop_address, &bombadil);
         let (usdc_address, _) = create_usdc_token(&e, &backstop_address, &bombadil);
         blnd_token_client.mint(&backstop_address, &100_0000000);
-        let backstop_1_emissions_config = BackstopEmissionConfig {
+
+        let backstop_1_emissions_data = BackstopEmissionData {
             expiration: 1500000000 + 7 * 24 * 60 * 60,
             eps: 0_1000000,
-        };
-        let backstop_1_emissions_data = BackstopEmissionsData {
             index: 22222,
             last_time: 1500000000,
         };
@@ -133,11 +132,9 @@ mod tests {
             accrued: 1_2345678,
         };
 
-        let backstop_2_emissions_config = BackstopEmissionConfig {
+        let backstop_2_emissions_data = BackstopEmissionData {
             expiration: 1500000000 + 7 * 24 * 60 * 60,
             eps: 0_0200000,
-        };
-        let backstop_2_emissions_data = BackstopEmissionsData {
             index: 0,
             last_time: 1500010000,
         };
@@ -148,10 +145,8 @@ mod tests {
         let (lp_address, lp_client) =
             create_comet_lp_pool(&e, &bombadil, &blnd_address, &usdc_address);
         e.as_contract(&backstop_address, || {
-            storage::set_backstop_emis_config(&e, &pool_1_id, &backstop_1_emissions_config);
             storage::set_backstop_emis_data(&e, &pool_1_id, &backstop_1_emissions_data);
             storage::set_user_emis_data(&e, &pool_1_id, &samwise, &user_1_emissions_data);
-            storage::set_backstop_emis_config(&e, &pool_2_id, &backstop_2_emissions_config);
             storage::set_backstop_emis_data(&e, &pool_2_id, &backstop_2_emissions_data);
             storage::set_user_emis_data(&e, &pool_2_id, &samwise, &user_2_emissions_data);
             storage::set_backstop_token(&e, &lp_address);
@@ -281,11 +276,9 @@ mod tests {
         let (usdc_address, _) = create_usdc_token(&e, &backstop_address, &bombadil);
         blnd_token_client.mint(&backstop_address, &200_0000000);
 
-        let backstop_1_emissions_config = BackstopEmissionConfig {
+        let backstop_1_emissions_data = BackstopEmissionData {
             expiration: 1500000000 + 7 * 24 * 60 * 60,
             eps: 0_1000000,
-        };
-        let backstop_1_emissions_data = BackstopEmissionsData {
             index: 22222,
             last_time: 1500000000,
         };
@@ -294,11 +287,9 @@ mod tests {
             accrued: 1_2345678,
         };
 
-        let backstop_2_emissions_config = BackstopEmissionConfig {
+        let backstop_2_emissions_data = BackstopEmissionData {
             expiration: 1500000000 + 7 * 24 * 60 * 60,
             eps: 0_0200000,
-        };
-        let backstop_2_emissions_data = BackstopEmissionsData {
             index: 0,
             last_time: 1500010000,
         };
@@ -309,10 +300,8 @@ mod tests {
         let (lp_address, lp_client) =
             create_comet_lp_pool(&e, &bombadil, &blnd_address, &usdc_address);
         e.as_contract(&backstop_address, || {
-            storage::set_backstop_emis_config(&e, &pool_1_id, &backstop_1_emissions_config);
             storage::set_backstop_emis_data(&e, &pool_1_id, &backstop_1_emissions_data);
             storage::set_user_emis_data(&e, &pool_1_id, &samwise, &user_1_emissions_data);
-            storage::set_backstop_emis_config(&e, &pool_2_id, &backstop_2_emissions_config);
             storage::set_backstop_emis_data(&e, &pool_2_id, &backstop_2_emissions_data);
             storage::set_user_emis_data(&e, &pool_2_id, &samwise, &user_2_emissions_data);
             storage::set_backstop_token(&e, &lp_address);
@@ -503,27 +492,21 @@ mod tests {
         let (_, blnd_token_client) = create_blnd_token(&e, &backstop_address, &bombadil);
         blnd_token_client.mint(&backstop_address, &100_0000000);
 
-        let backstop_1_emissions_config = BackstopEmissionConfig {
+        let backstop_1_emissions_data = BackstopEmissionData {
             expiration: 1500000000 + 7 * 24 * 60 * 60,
             eps: 0_1000000,
-        };
-        let backstop_1_emissions_data = BackstopEmissionsData {
             index: 22222,
             last_time: 1500000000,
         };
 
-        let backstop_2_emissions_config = BackstopEmissionConfig {
+        let backstop_2_emissions_data = BackstopEmissionData {
             expiration: 1500000000 + 7 * 24 * 60 * 60,
             eps: 0_0200000,
-        };
-        let backstop_2_emissions_data = BackstopEmissionsData {
             index: 0,
             last_time: 1500010000,
         };
         e.as_contract(&backstop_address, || {
-            storage::set_backstop_emis_config(&e, &pool_1_id, &backstop_1_emissions_config);
             storage::set_backstop_emis_data(&e, &pool_1_id, &backstop_1_emissions_data);
-            storage::set_backstop_emis_config(&e, &pool_2_id, &backstop_2_emissions_config);
             storage::set_backstop_emis_data(&e, &pool_2_id, &backstop_2_emissions_data);
 
             storage::set_pool_balance(

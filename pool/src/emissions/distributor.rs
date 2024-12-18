@@ -6,9 +6,8 @@ use soroban_sdk::{panic_with_error, unwrap::UnwrapOptimized, Address, Env, Vec};
 use crate::{
     errors::PoolError,
     pool::User,
-    storage::{self, ReserveEmissionsData, UserEmissionData},
+    storage::{self, ReserveEmissionData, UserEmissionData},
     validator::require_nonnegative,
-    ReserveEmissionsConfig,
 };
 
 /// Performs a claim against the given "reserve_token_ids" for "from"
@@ -133,24 +132,6 @@ fn claim_emissions(
     }
 }
 
-fn update_emission_data(
-    e: &Env,
-    res_token_id: u32,
-    supply: i128,
-    supply_scalar: i128,
-) -> Option<ReserveEmissionsData> {
-    match storage::get_res_emis_config(e, &res_token_id) {
-        Some(emis_config) => Some(update_emission_data_with_config(
-            e,
-            res_token_id,
-            supply,
-            supply_scalar,
-            &emis_config,
-        )),
-        None => return None, // no emission exist, no update is required
-    }
-}
-
 /// Update the reserve token emission data
 ///
 /// Returns the new ReserveEmissionData, if None if no data exists
@@ -163,44 +144,45 @@ fn update_emission_data(
 ///
 /// ### Panics
 /// If the reserve update failed
-pub(super) fn update_emission_data_with_config(
+pub(super) fn update_emission_data(
     e: &Env,
     res_token_id: u32,
     supply: i128,
     supply_scalar: i128,
-    emis_config: &ReserveEmissionsConfig,
-) -> ReserveEmissionsData {
-    let token_emission_data = storage::get_res_emis_data(e, &res_token_id).unwrap_optimized(); // exists if config is written to
+) -> Option<ReserveEmissionData> {
+    match storage::get_res_emis_data(e, &res_token_id) {
+        Some(mut res_emission_data) => {
+            if res_emission_data.last_time >= res_emission_data.expiration
+                || e.ledger().timestamp() == res_emission_data.last_time
+                || res_emission_data.eps == 0
+                || supply == 0
+            {
+                return Some(res_emission_data);
+            }
 
-    if token_emission_data.last_time >= emis_config.expiration
-        || e.ledger().timestamp() == token_emission_data.last_time
-        || emis_config.eps == 0
-        || supply == 0
-    {
-        return token_emission_data;
+            let ledger_timestamp = if e.ledger().timestamp() > res_emission_data.expiration {
+                res_emission_data.expiration
+            } else {
+                e.ledger().timestamp()
+            };
+
+            let additional_idx = (i128(ledger_timestamp - res_emission_data.last_time)
+                * i128(res_emission_data.eps))
+            .fixed_div_floor(supply, supply_scalar)
+            .unwrap_optimized();
+
+            res_emission_data.index += additional_idx;
+            res_emission_data.last_time = ledger_timestamp;
+            storage::set_res_emis_data(e, &res_token_id, &res_emission_data);
+            Some(res_emission_data)
+        }
+        None => return None, // no emission exist, no update is required
     }
-
-    let ledger_timestamp = if e.ledger().timestamp() > emis_config.expiration {
-        emis_config.expiration
-    } else {
-        e.ledger().timestamp()
-    };
-
-    let additional_idx = (i128(ledger_timestamp - token_emission_data.last_time)
-        * i128(emis_config.eps))
-    .fixed_div_floor(supply, supply_scalar)
-    .unwrap_optimized();
-    let new_data = ReserveEmissionsData {
-        index: additional_idx + token_emission_data.index,
-        last_time: ledger_timestamp,
-    };
-    storage::set_res_emis_data(e, &res_token_id, &new_data);
-    new_data
 }
 
 fn update_user_emissions(
     e: &Env,
-    res_emis_data: &ReserveEmissionsData,
+    res_emis_data: &ReserveEmissionData,
     res_token_id: u32,
     supply_scalar: i128,
     user: &Address,
@@ -257,7 +239,7 @@ fn set_user_emissions(
 
 #[cfg(test)]
 mod tests {
-    use crate::{pool::Positions, storage::ReserveEmissionsConfig, testutils};
+    use crate::{pool::Positions, testutils};
 
     use super::*;
     use soroban_sdk::{
@@ -290,11 +272,9 @@ mod tests {
         let supply: i128 = 50_0000000;
         let user_position: i128 = 2_0000000;
         e.as_contract(&pool, || {
-            let reserve_emission_config = ReserveEmissionsConfig {
+            let reserve_emission_data = ReserveEmissionData {
                 expiration: 1600000000,
                 eps: 0_0100000,
-            };
-            let reserve_emission_data = ReserveEmissionsData {
                 index: 2345678,
                 last_time: 1500000000,
             };
@@ -305,7 +285,6 @@ mod tests {
             let res_token_type = 0;
             let res_token_index = 1 * 2 + res_token_type;
 
-            storage::set_res_emis_config(&e, &res_token_index, &reserve_emission_config);
             storage::set_res_emis_data(&e, &res_token_index, &reserve_emission_data);
             storage::set_user_emissions(&e, &samwise, &res_token_index, &user_emission_data);
 
@@ -332,7 +311,7 @@ mod tests {
     }
 
     #[test]
-    fn test_update_emissions_no_config_ignores() {
+    fn test_update_emissions_no_data_ignores() {
         let e = Env::default();
         e.mock_all_auths();
 
@@ -393,11 +372,9 @@ mod tests {
         let supply: i128 = 50_0000000;
         let user_position: i128 = 2_0000000;
         e.as_contract(&pool, || {
-            let reserve_emission_config = ReserveEmissionsConfig {
+            let reserve_emission_data = ReserveEmissionData {
                 expiration: 1600000000,
                 eps: 0_0100000,
-            };
-            let reserve_emission_data = ReserveEmissionsData {
                 index: 2345678,
                 last_time: 1501000000 + 1,
             };
@@ -408,7 +385,6 @@ mod tests {
             let res_token_type = 0;
             let res_token_index = 1 * 2 + res_token_type;
 
-            storage::set_res_emis_config(&e, &res_token_index, &reserve_emission_config);
             storage::set_res_emis_data(&e, &res_token_index, &reserve_emission_data);
             storage::set_user_emissions(&e, &samwise, &res_token_index, &user_emission_data);
 
@@ -447,11 +423,9 @@ mod tests {
         let supply: i128 = 50_0000000;
         let user_position: i128 = 2_0000000;
         e.as_contract(&pool, || {
-            let reserve_emission_config = ReserveEmissionsConfig {
+            let reserve_emission_data = ReserveEmissionData {
                 expiration: 1600000000,
                 eps: 0_0100000,
-            };
-            let reserve_emission_data = ReserveEmissionsData {
                 index: 2345678,
                 last_time: 1500000000,
             };
@@ -462,7 +436,6 @@ mod tests {
             let res_token_type = 0;
             let res_token_index = 1 * 2 + res_token_type;
 
-            storage::set_res_emis_config(&e, &res_token_index, &reserve_emission_config);
             storage::set_res_emis_data(&e, &res_token_index, &reserve_emission_data);
             storage::set_user_emissions(&e, &samwise, &res_token_index, &user_emission_data);
 
@@ -563,7 +536,6 @@ mod tests {
                 }
                 None => {
                     assert!(storage::get_res_emis_data(&e, &res_token_index).is_none());
-                    assert!(storage::get_res_emis_config(&e, &res_token_index).is_none());
                 }
             }
         });
@@ -590,18 +562,16 @@ mod tests {
         let supply = 50_0000000;
         let supply_scalar = 1_0000000;
         e.as_contract(&pool, || {
-            let reserve_emission_config = ReserveEmissionsConfig {
+            let reserve_emission_data = ReserveEmissionData {
                 expiration: 1600000000,
                 eps: 0_0100000,
-            };
-            let reserve_emission_data = ReserveEmissionsData {
                 index: 2345678,
                 last_time: 1600000000,
             };
 
             let res_token_type = 0;
             let res_token_index = 1 * 2 + res_token_type;
-            storage::set_res_emis_config(&e, &res_token_index, &reserve_emission_config);
+
             storage::set_res_emis_data(&e, &res_token_index, &reserve_emission_data);
 
             let result = update_emission_data(&e, res_token_index, supply, supply_scalar);
@@ -641,18 +611,16 @@ mod tests {
         let supply = 50_0000000;
         let supply_scalar = 1_0000000;
         e.as_contract(&pool, || {
-            let reserve_emission_config = ReserveEmissionsConfig {
+            let reserve_emission_data = ReserveEmissionData {
                 expiration: 1600000000,
                 eps: 0_0100000,
-            };
-            let reserve_emission_data = ReserveEmissionsData {
                 index: 2345678,
                 last_time: 1501000000,
             };
 
             let res_token_type = 1;
             let res_token_index = 1 * 2 + res_token_type;
-            storage::set_res_emis_config(&e, &res_token_index, &reserve_emission_config);
+
             storage::set_res_emis_data(&e, &res_token_index, &reserve_emission_data);
 
             let result = update_emission_data(&e, res_token_index, supply, supply_scalar);
@@ -692,18 +660,16 @@ mod tests {
         let supply = 50_0000000;
         let supply_scalar = 1_0000000;
         e.as_contract(&pool, || {
-            let reserve_emission_config = ReserveEmissionsConfig {
+            let reserve_emission_data = ReserveEmissionData {
                 expiration: 1600000000,
                 eps: 0,
-            };
-            let reserve_emission_data = ReserveEmissionsData {
                 index: 2345678,
                 last_time: 1500000000,
             };
 
             let res_token_type = 0;
             let res_token_index = 1 * 2 + res_token_type;
-            storage::set_res_emis_config(&e, &res_token_index, &reserve_emission_config);
+
             storage::set_res_emis_data(&e, &res_token_index, &reserve_emission_data);
 
             let result = update_emission_data(&e, res_token_index, supply, supply_scalar);
@@ -743,18 +709,16 @@ mod tests {
         let supply = 0;
         let supply_scalar = 1_0000000;
         e.as_contract(&pool, || {
-            let reserve_emission_config = ReserveEmissionsConfig {
+            let reserve_emission_data = ReserveEmissionData {
                 expiration: 1600000000,
                 eps: 0_0100000,
-            };
-            let reserve_emission_data = ReserveEmissionsData {
                 index: 2345678,
                 last_time: 1500000000,
             };
 
             let res_token_type = 1;
             let res_token_index = 1 * 2 + res_token_type;
-            storage::set_res_emis_config(&e, &res_token_index, &reserve_emission_config);
+
             storage::set_res_emis_data(&e, &res_token_index, &reserve_emission_data);
 
             let result = update_emission_data(&e, res_token_index, supply, supply_scalar);
@@ -794,18 +758,16 @@ mod tests {
         let supply = 100_0000000;
         let supply_scalar = 1_0000000;
         e.as_contract(&pool, || {
-            let reserve_emission_config = ReserveEmissionsConfig {
+            let reserve_emission_data = ReserveEmissionData {
                 expiration: 1600000001,
                 eps: 0_0100000,
-            };
-            let reserve_emission_data = ReserveEmissionsData {
                 index: 123456789,
                 last_time: 1500000000,
             };
 
             let res_token_type = 0;
             let res_token_index = 1 * 2 + res_token_type;
-            storage::set_res_emis_config(&e, &res_token_index, &reserve_emission_config);
+
             storage::set_res_emis_data(&e, &res_token_index, &reserve_emission_data);
 
             let result = update_emission_data(&e, res_token_index, supply, supply_scalar);
@@ -842,18 +804,16 @@ mod tests {
         let supply = 100_0001111;
         let supply_scalar = 1_0000000;
         e.as_contract(&pool, || {
-            let reserve_emission_config = ReserveEmissionsConfig {
+            let reserve_emission_data = ReserveEmissionData {
                 expiration: 1600000000,
                 eps: 0_0100000,
-            };
-            let reserve_emission_data = ReserveEmissionsData {
                 index: 123456789,
                 last_time: 1500000000,
             };
 
             let res_token_type = 1;
             let res_token_index = 1 * 2 + res_token_type;
-            storage::set_res_emis_config(&e, &res_token_index, &reserve_emission_config);
+
             storage::set_res_emis_data(&e, &res_token_index, &reserve_emission_data);
 
             let result = update_emission_data(&e, res_token_index, supply, supply_scalar);
@@ -893,7 +853,9 @@ mod tests {
         let supply_scalar = 1_0000000;
         let user_balance = 0;
         e.as_contract(&pool, || {
-            let reserve_emission_data = ReserveEmissionsData {
+            let reserve_emission_data = ReserveEmissionData {
+                expiration: 1600000000,
+                eps: 0_0100000,
                 index: 123456789,
                 last_time: 1500000000,
             };
@@ -939,7 +901,9 @@ mod tests {
         let supply_scalar = 1_0000000;
         let user_balance = 0_5000000;
         e.as_contract(&pool, || {
-            let reserve_emission_data = ReserveEmissionsData {
+            let reserve_emission_data = ReserveEmissionData {
+                expiration: 1600000000,
+                eps: 0_0100000,
                 index: 123456789,
                 last_time: 1500000000,
             };
@@ -985,7 +949,9 @@ mod tests {
         let supply_scalar = 1_0000000;
         let user_balance = 0;
         e.as_contract(&pool, || {
-            let reserve_emission_data = ReserveEmissionsData {
+            let reserve_emission_data = ReserveEmissionData {
+                expiration: 1600000000,
+                eps: 0_0100000,
                 index: 123456789,
                 last_time: 1500000000,
             };
@@ -1038,7 +1004,9 @@ mod tests {
         let supply_scalar = 1_0000000;
         let user_balance = 0_5000000;
         e.as_contract(&pool, || {
-            let reserve_emission_data = ReserveEmissionsData {
+            let reserve_emission_data = ReserveEmissionData {
+                expiration: 1600000000,
+                eps: 0_0100000,
                 index: 123456789,
                 last_time: 1500000000,
             };
@@ -1090,7 +1058,9 @@ mod tests {
         let supply_scalar = 1_0000000;
         let user_balance = 0_5000000;
         e.as_contract(&pool, || {
-            let reserve_emission_data = ReserveEmissionsData {
+            let reserve_emission_data = ReserveEmissionData {
+                expiration: 1600000000,
+                eps: 0_0100000,
                 index: 123456789,
                 last_time: 1500000000,
             };
@@ -1143,7 +1113,9 @@ mod tests {
         let supply_scalar = 1_0000000;
         let user_balance = 0_5000000;
         e.as_contract(&pool, || {
-            let reserve_emission_data = ReserveEmissionsData {
+            let reserve_emission_data = ReserveEmissionData {
+                expiration: 1600000000,
+                eps: 0_0100000,
                 index: 123456789,
                 last_time: 1500000000,
             };
@@ -1197,7 +1169,9 @@ mod tests {
         let supply_scalar = 1_0000000;
         let user_balance = 0_5000000;
         e.as_contract(&pool, || {
-            let reserve_emission_data = ReserveEmissionsData {
+            let reserve_emission_data = ReserveEmissionData {
+                expiration: 1600000000,
+                eps: 0_0100000,
                 index: 123456789,
                 last_time: 1500000000,
             };
@@ -1246,7 +1220,9 @@ mod tests {
         let supply_scalar = 1_0000000;
         let user_balance = 0_5000000;
         e.as_contract(&pool, || {
-            let reserve_emission_data = ReserveEmissionsData {
+            let reserve_emission_data = ReserveEmissionData {
+                expiration: 1600000000,
+                eps: 0_0100000,
                 index: 123456789,
                 last_time: 1500000000,
             };
@@ -1327,11 +1303,9 @@ mod tests {
             storage::set_backstop(&e, &backstop);
             storage::set_user_positions(&e, &samwise, &user_positions);
 
-            let reserve_emission_config_0 = ReserveEmissionsConfig {
+            let reserve_emission_data_0 = ReserveEmissionData {
                 expiration: 1600000000,
                 eps: 0_0100000,
-            };
-            let reserve_emission_data_0 = ReserveEmissionsData {
                 index: 2345678,
                 last_time: 1500000000,
             };
@@ -1341,11 +1315,9 @@ mod tests {
             };
             let res_token_index_0 = 0 * 2 + 0; // d_token for reserve 0
 
-            let reserve_emission_config_1 = ReserveEmissionsConfig {
+            let reserve_emission_data_1 = ReserveEmissionData {
                 expiration: 1600000000,
                 eps: 0_0150000,
-            };
-            let reserve_emission_data_1 = ReserveEmissionsData {
                 index: 1345678,
                 last_time: 1500000000,
             };
@@ -1355,11 +1327,9 @@ mod tests {
             };
             let res_token_index_1 = 1 * 2 + 1; // b_token for reserve 1
 
-            storage::set_res_emis_config(&e, &res_token_index_0, &reserve_emission_config_0);
             storage::set_res_emis_data(&e, &res_token_index_0, &reserve_emission_data_0);
             storage::set_user_emissions(&e, &samwise, &res_token_index_0, &user_emission_data_0);
 
-            storage::set_res_emis_config(&e, &res_token_index_1, &reserve_emission_config_1);
             storage::set_res_emis_data(&e, &res_token_index_1, &reserve_emission_data_1);
             storage::set_user_emissions(&e, &samwise, &res_token_index_1, &user_emission_data_1);
 
@@ -1452,11 +1422,9 @@ mod tests {
             storage::set_backstop(&e, &backstop);
             storage::set_user_positions(&e, &samwise, &user_positions);
 
-            let reserve_emission_config_0 = ReserveEmissionsConfig {
+            let reserve_emission_data_0 = ReserveEmissionData {
                 expiration: 1600000000,
                 eps: 0_0100000,
-            };
-            let reserve_emission_data_0 = ReserveEmissionsData {
                 index: 2345678,
                 last_time: 1500000000,
             };
@@ -1466,11 +1434,9 @@ mod tests {
             };
             let res_token_index_0 = 0 * 2 + 0; // d_token for reserve 0
 
-            let reserve_emission_config_1 = ReserveEmissionsConfig {
+            let reserve_emission_data_1 = ReserveEmissionData {
                 expiration: 1600000000,
                 eps: 0_0150000,
-            };
-            let reserve_emission_data_1 = ReserveEmissionsData {
                 index: 1345678,
                 last_time: 1501000000,
             };
@@ -1480,11 +1446,9 @@ mod tests {
             };
             let res_token_index_1 = 1 * 2 + 1; // b_token for reserve 1
 
-            storage::set_res_emis_config(&e, &res_token_index_0, &reserve_emission_config_0);
             storage::set_res_emis_data(&e, &res_token_index_0, &reserve_emission_data_0);
             storage::set_user_emissions(&e, &samwise, &res_token_index_0, &user_emission_data_0);
 
-            storage::set_res_emis_config(&e, &res_token_index_1, &reserve_emission_config_1);
             storage::set_res_emis_data(&e, &res_token_index_1, &reserve_emission_data_1);
             storage::set_user_emissions(&e, &samwise, &res_token_index_1, &user_emission_data_1);
 
@@ -1579,11 +1543,9 @@ mod tests {
             storage::set_backstop(&e, &backstop);
             storage::set_user_positions(&e, &samwise, &user_positions);
 
-            let reserve_emission_config_0 = ReserveEmissionsConfig {
+            let reserve_emission_data_0 = ReserveEmissionData {
                 expiration: 1600000000,
                 eps: 0_0100000,
-            };
-            let reserve_emission_data_0 = ReserveEmissionsData {
                 index: 2345678,
                 last_time: 1500000000,
             };
@@ -1593,11 +1555,9 @@ mod tests {
             };
             let res_token_index_0 = 0 * 2 + 0; // d_token for reserve 0
 
-            let reserve_emission_config_1 = ReserveEmissionsConfig {
+            let reserve_emission_data_1 = ReserveEmissionData {
                 expiration: 1600000000,
                 eps: 0_0150000,
-            };
-            let reserve_emission_data_1 = ReserveEmissionsData {
                 index: 1345678,
                 last_time: 1500000000,
             };
@@ -1607,11 +1567,9 @@ mod tests {
             };
             let res_token_index_1 = 1 * 2 + 1; // b_token for reserve 1
 
-            storage::set_res_emis_config(&e, &res_token_index_0, &reserve_emission_config_0);
             storage::set_res_emis_data(&e, &res_token_index_0, &reserve_emission_data_0);
             storage::set_user_emissions(&e, &samwise, &res_token_index_0, &user_emission_data_0);
 
-            storage::set_res_emis_config(&e, &res_token_index_1, &reserve_emission_config_1);
             storage::set_res_emis_data(&e, &res_token_index_1, &reserve_emission_data_1);
             storage::set_user_emissions(&e, &samwise, &res_token_index_1, &user_emission_data_1);
 

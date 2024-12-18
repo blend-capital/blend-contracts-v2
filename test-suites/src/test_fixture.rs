@@ -10,10 +10,7 @@ use crate::pool_factory::create_pool_factory;
 use crate::token::{create_stellar_token, create_token};
 use backstop::BackstopClient;
 use emitter::EmitterClient;
-use pool::{
-    PoolClient, PoolConfig, PoolDataKey, ReserveConfig, ReserveData, ReserveEmissionsConfig,
-    ReserveEmissionsData,
-};
+use pool::{PoolClient, PoolConfig, PoolDataKey, ReserveConfig, ReserveData, ReserveEmissionData};
 use pool_factory::{PoolFactoryClient, PoolInitMeta};
 use sep_40_oracle::testutils::{Asset, MockPriceOracleClient};
 use sep_41_token::testutils::MockTokenClient;
@@ -259,24 +256,18 @@ impl TestFixture<'_> {
         pool_index: usize,
         asset_index: TokenIndex,
         token_type: u32,
-    ) -> (ReserveEmissionsConfig, ReserveEmissionsData) {
+    ) -> ReserveEmissionData {
         let pool_fixture = &self.pools[pool_index];
         let reserve_index = pool_fixture.reserves.get(&asset_index).unwrap();
         let res_emis_index = reserve_index * 2 + token_type;
         self.env.as_contract(&pool_fixture.pool.address, || {
-            let emis_config = self
-                .env
-                .storage()
-                .persistent()
-                .get(&PoolDataKey::EmisConfig(res_emis_index))
-                .unwrap();
             let emis_data = self
                 .env
                 .storage()
                 .persistent()
                 .get(&PoolDataKey::EmisData(res_emis_index))
                 .unwrap();
-            (emis_config, emis_data)
+            emis_data
         })
     }
 

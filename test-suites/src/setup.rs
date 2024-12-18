@@ -190,16 +190,16 @@ mod tests {
         );
 
         // validate emissions are turned on
-        let (emis_config, emis_data) = fixture.read_reserve_emissions(0, TokenIndex::STABLE, 0);
+        let emis_data = fixture.read_reserve_emissions(0, TokenIndex::STABLE, 0);
         assert_eq!(
             emis_data.last_time,
             fixture.env.ledger().timestamp() - 60 * 61
         );
         assert_eq!(emis_data.index, 0);
-        assert_eq!(0_180_0000, emis_config.eps);
+        assert_eq!(0_180_0000, emis_data.eps);
         assert_eq!(
             fixture.env.ledger().timestamp() + 7 * 24 * 60 * 60 - 60 * 61,
-            emis_config.expiration
+            emis_data.expiration
         )
     }
 
@@ -247,16 +247,16 @@ mod tests {
         );
 
         // validate emissions are turned on
-        let (emis_config, emis_data) = fixture.read_reserve_emissions(0, TokenIndex::STABLE, 0);
+        let emis_data = fixture.read_reserve_emissions(0, TokenIndex::STABLE, 0);
         assert_eq!(
             emis_data.last_time,
             fixture.env.ledger().timestamp() - 60 * 61
         );
         assert_eq!(emis_data.index, 0);
-        assert_eq!(0_180_0000, emis_config.eps);
+        assert_eq!(0_180_0000, emis_data.eps);
         assert_eq!(
             fixture.env.ledger().timestamp() + 7 * 24 * 60 * 60 - 60 * 61,
-            emis_config.expiration
+            emis_data.expiration
         )
     }
 }

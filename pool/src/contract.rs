@@ -4,7 +4,7 @@ use crate::{
     events::PoolEvents,
     pool::{self, Positions, Request, Reserve},
     storage::{self, ReserveConfig},
-    PoolConfig, PoolError, ReserveEmissionsData, UserEmissionData,
+    PoolConfig, PoolError, ReserveEmissionData, UserEmissionData,
 };
 use soroban_sdk::{
     contract, contractclient, contractimpl, panic_with_error, Address, Env, String, Vec,
@@ -232,7 +232,7 @@ pub trait Pool {
     /// ### Arguments
     /// * `reserve_token_id` - The reserve token id. This is a unique identifier for the type of position in a pool. For
     ///                        dTokens, a reserve token id (reserve_index * 2). For bTokens, a reserve token id (reserve_index * 2) + 1.
-    fn get_reserve_emissions(e: Env, reserve_token_id: u32) -> ReserveEmissionsData;
+    fn get_reserve_emissions(e: Env, reserve_token_id: u32) -> ReserveEmissionData;
 
     /// Get the emissions data for a user
     ///
@@ -446,8 +446,10 @@ impl Pool for PoolContract {
         amount_claimed
     }
 
-    fn get_reserve_emissions(e: Env, reserve_token_index: u32) -> ReserveEmissionsData {
-        storage::get_res_emis_data(&e, &reserve_token_index).unwrap_or(ReserveEmissionsData {
+    fn get_reserve_emissions(e: Env, reserve_token_index: u32) -> ReserveEmissionData {
+        storage::get_res_emis_data(&e, &reserve_token_index).unwrap_or(ReserveEmissionData {
+            expiration: 0,
+            eps: 0,
             index: 0,
             last_time: 0,
         })

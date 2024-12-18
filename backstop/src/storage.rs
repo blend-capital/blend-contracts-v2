@@ -19,18 +19,12 @@ pub(crate) const LEDGER_BUMP_USER: u32 = LEDGER_THRESHOLD_USER + 20 * ONE_DAY_LE
 
 /********** Storage Types **********/
 
-// The emission configuration for a pool's backstop
-#[derive(Clone)]
-#[contracttype]
-pub struct BackstopEmissionConfig {
-    pub expiration: u64,
-    pub eps: u64,
-}
-
 // The emission data for a pool's backstop
 #[derive(Clone)]
 #[contracttype]
-pub struct BackstopEmissionsData {
+pub struct BackstopEmissionData {
+    pub expiration: u64,
+    pub eps: u64,
     pub index: i128,
     pub last_time: u64,
 }
@@ -370,42 +364,11 @@ pub fn set_pool_emissions(e: &Env, pool: &Address, emissions: i128) {
 
 /********** Backstop Depositor Emissions **********/
 
-/// Get the pool's backstop emissions config, or None
-///
-/// ### Arguments
-/// * `pool` - The pool
-pub fn get_backstop_emis_config(e: &Env, pool: &Address) -> Option<BackstopEmissionConfig> {
-    let key = BackstopDataKey::BEmisCfg(pool.clone());
-    get_persistent_default(
-        e,
-        &key,
-        || None,
-        LEDGER_THRESHOLD_SHARED,
-        LEDGER_BUMP_SHARED,
-    )
-}
-
-/// Set the pool's backstop emissions config
-///
-/// ### Arguments
-/// * `pool` - The pool
-/// * `backstop_emis_config` - The new emission data for the backstop
-pub fn set_backstop_emis_config(
-    e: &Env,
-    pool: &Address,
-    backstop_emis_config: &BackstopEmissionConfig,
-) {
-    let key = BackstopDataKey::BEmisCfg(pool.clone());
-    e.storage()
-        .persistent()
-        .set::<BackstopDataKey, BackstopEmissionConfig>(&key, backstop_emis_config);
-}
-
 /// Get the pool's backstop emissions data
 ///
 /// ### Arguments
 /// * `pool` - The pool
-pub fn get_backstop_emis_data(e: &Env, pool: &Address) -> Option<BackstopEmissionsData> {
+pub fn get_backstop_emis_data(e: &Env, pool: &Address) -> Option<BackstopEmissionData> {
     let key = BackstopDataKey::BEmisData(pool.clone());
     get_persistent_default(
         e,
@@ -421,11 +384,11 @@ pub fn get_backstop_emis_data(e: &Env, pool: &Address) -> Option<BackstopEmissio
 /// ### Arguments
 /// * `pool` - The pool
 /// * `backstop_emis_data` - The new emission data for the backstop
-pub fn set_backstop_emis_data(e: &Env, pool: &Address, backstop_emis_data: &BackstopEmissionsData) {
+pub fn set_backstop_emis_data(e: &Env, pool: &Address, backstop_emis_data: &BackstopEmissionData) {
     let key = BackstopDataKey::BEmisData(pool.clone());
     e.storage()
         .persistent()
-        .set::<BackstopDataKey, BackstopEmissionsData>(&key, backstop_emis_data);
+        .set::<BackstopDataKey, BackstopEmissionData>(&key, backstop_emis_data);
 }
 
 /// Get the user's backstop emissions data

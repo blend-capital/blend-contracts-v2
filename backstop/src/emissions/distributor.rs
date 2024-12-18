@@ -8,8 +8,7 @@ use crate::{
     backstop::{PoolBalance, UserBalance},
     constants::SCALAR_7,
     require_nonnegative,
-    storage::{self, BackstopEmissionsData, UserEmissionData},
-    BackstopEmissionConfig,
+    storage::{self, BackstopEmissionData, UserEmissionData},
 };
 
 /// Update the backstop emissions index for the user and pool
@@ -47,62 +46,44 @@ pub(super) fn claim_emissions(
 }
 
 /// Update the backstop emissions index for deposits
-fn update_emission_data(
+pub fn update_emission_data(
     e: &Env,
     pool_id: &Address,
     pool_balance: &PoolBalance,
-) -> Option<BackstopEmissionsData> {
-    match storage::get_backstop_emis_config(e, pool_id) {
-        Some(config) => Some(update_emission_data_with_config(
-            e,
-            pool_id,
-            pool_balance,
-            &config,
-        )),
+) -> Option<BackstopEmissionData> {
+    match storage::get_backstop_emis_data(e, pool_id) {
+        Some(emis_data) => {
+            if emis_data.last_time >= emis_data.expiration
+                || e.ledger().timestamp() == emis_data.last_time
+                || emis_data.eps == 0
+                || pool_balance.shares == 0
+            {
+                // emis_data already updated or expired
+                return Some(emis_data);
+            }
+
+            let max_timestamp = if e.ledger().timestamp() > emis_data.expiration {
+                emis_data.expiration
+            } else {
+                e.ledger().timestamp()
+            };
+
+            let unqueued_shares = pool_balance.shares - pool_balance.q4w;
+            require_nonnegative(e, unqueued_shares);
+            let additional_idx = (i128(max_timestamp - emis_data.last_time) * i128(emis_data.eps))
+                .fixed_div_floor(unqueued_shares, SCALAR_7)
+                .unwrap_optimized();
+            let new_data = BackstopEmissionData {
+                eps: emis_data.eps,
+                expiration: emis_data.expiration,
+                index: additional_idx + emis_data.index,
+                last_time: e.ledger().timestamp(),
+            };
+            storage::set_backstop_emis_data(e, pool_id, &new_data);
+            Some(new_data)
+        }
         None => return None, // no emission exist, no update is required
     }
-}
-
-/// Update the backstop emissions index for deposits with the config already read
-///
-/// Stores the new backstop emissions data to the ledger
-///
-/// ### Returns
-/// The new backstop emissions data
-pub fn update_emission_data_with_config(
-    e: &Env,
-    pool_id: &Address,
-    pool_balance: &PoolBalance,
-    emis_config: &BackstopEmissionConfig,
-) -> BackstopEmissionsData {
-    let emis_data = storage::get_backstop_emis_data(e, pool_id).unwrap_optimized(); // exists if config is written to
-
-    if emis_data.last_time >= emis_config.expiration
-        || e.ledger().timestamp() == emis_data.last_time
-        || emis_config.eps == 0
-        || pool_balance.shares == 0
-    {
-        // emis_data already updated or expired
-        return emis_data;
-    }
-
-    let max_timestamp = if e.ledger().timestamp() > emis_config.expiration {
-        emis_config.expiration
-    } else {
-        e.ledger().timestamp()
-    };
-
-    let unqueued_shares = pool_balance.shares - pool_balance.q4w;
-    require_nonnegative(e, unqueued_shares);
-    let additional_idx = (i128(max_timestamp - emis_data.last_time) * i128(emis_config.eps))
-        .fixed_div_floor(unqueued_shares, SCALAR_7)
-        .unwrap_optimized();
-    let new_data = BackstopEmissionsData {
-        index: additional_idx + emis_data.index,
-        last_time: e.ledger().timestamp(),
-    };
-    storage::set_backstop_emis_data(e, pool_id, &new_data);
-    new_data
 }
 
 /// Update the user's emissions. If `to_claim` is true, the user's accrued emissions will be returned and
@@ -114,7 +95,7 @@ fn update_user_emissions(
     e: &Env,
     pool: &Address,
     user: &Address,
-    emis_data: &BackstopEmissionsData,
+    emis_data: &BackstopEmissionData,
     user_balance: &UserBalance,
     to_claim: bool,
 ) -> i128 {
@@ -165,9 +146,7 @@ fn set_user_emissions(
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        constants::BACKSTOP_EPOCH, storage::BackstopEmissionConfig, testutils::create_backstop, Q4W,
-    };
+    use crate::{constants::BACKSTOP_EPOCH, testutils::create_backstop, Q4W};
 
     use super::*;
     use soroban_sdk::{
@@ -196,11 +175,9 @@ mod tests {
         let pool_1 = Address::generate(&e);
         let samwise = Address::generate(&e);
 
-        let backstop_emissions_config = BackstopEmissionConfig {
+        let backstop_emissions_data = BackstopEmissionData {
             expiration: BACKSTOP_EPOCH + 7 * 24 * 60 * 60,
             eps: 0_1000000,
-        };
-        let backstop_emissions_data = BackstopEmissionsData {
             index: 22222,
             last_time: BACKSTOP_EPOCH,
         };
@@ -210,7 +187,6 @@ mod tests {
         };
         e.as_contract(&backstop_id, || {
             storage::set_last_distribution_time(&e, &BACKSTOP_EPOCH);
-            storage::set_backstop_emis_config(&e, &pool_1, &backstop_emissions_config);
             storage::set_backstop_emis_data(&e, &pool_1, &backstop_emissions_data);
             storage::set_user_emis_data(&e, &pool_1, &samwise, &user_emissions_data);
 
@@ -237,7 +213,7 @@ mod tests {
     }
 
     #[test]
-    fn test_update_emissions_no_config() {
+    fn test_update_emissions_no_data() {
         let e = Env::default();
         let block_timestamp = BACKSTOP_EPOCH + 1234;
         e.ledger().set(LedgerInfo {
@@ -296,17 +272,15 @@ mod tests {
         let pool_1 = Address::generate(&e);
         let samwise = Address::generate(&e);
 
-        let backstop_emissions_config = BackstopEmissionConfig {
+        let backstop_emissions_data = BackstopEmissionData {
             expiration: BACKSTOP_EPOCH + 7 * 24 * 60 * 60,
             eps: 0_0420000,
-        };
-        let backstop_emissions_data = BackstopEmissionsData {
             index: 22222,
             last_time: BACKSTOP_EPOCH,
         };
         e.as_contract(&backstop_id, || {
             storage::set_last_distribution_time(&e, &BACKSTOP_EPOCH);
-            storage::set_backstop_emis_config(&e, &pool_1, &backstop_emissions_config);
+
             storage::set_backstop_emis_data(&e, &pool_1, &backstop_emissions_data);
 
             let pool_balance = PoolBalance {
@@ -350,17 +324,15 @@ mod tests {
         let pool_1 = Address::generate(&e);
         let samwise = Address::generate(&e);
 
-        let backstop_emissions_config = BackstopEmissionConfig {
+        let backstop_emissions_data = BackstopEmissionData {
             expiration: BACKSTOP_EPOCH + 7 * 24 * 60 * 60,
             eps: 0_0420000,
-        };
-        let backstop_emissions_data = BackstopEmissionsData {
             index: 0,
             last_time: BACKSTOP_EPOCH,
         };
         e.as_contract(&backstop_id, || {
             storage::set_last_distribution_time(&e, &BACKSTOP_EPOCH);
-            storage::set_backstop_emis_config(&e, &pool_1, &backstop_emissions_config);
+
             storage::set_backstop_emis_data(&e, &pool_1, &backstop_emissions_data);
 
             let pool_balance = PoolBalance {
@@ -404,11 +376,9 @@ mod tests {
         let pool_1 = Address::generate(&e);
         let samwise = Address::generate(&e);
 
-        let backstop_emissions_config = BackstopEmissionConfig {
+        let backstop_emissions_data = BackstopEmissionData {
             expiration: BACKSTOP_EPOCH + 7 * 24 * 60 * 60,
             eps: 0_1000000,
-        };
-        let backstop_emissions_data = BackstopEmissionsData {
             index: 22222,
             last_time: BACKSTOP_EPOCH,
         };
@@ -418,7 +388,7 @@ mod tests {
         };
         e.as_contract(&backstop_id, || {
             storage::set_last_distribution_time(&e, &BACKSTOP_EPOCH);
-            storage::set_backstop_emis_config(&e, &pool_1, &backstop_emissions_config);
+
             storage::set_backstop_emis_data(&e, &pool_1, &backstop_emissions_data);
             storage::set_user_emis_data(&e, &pool_1, &samwise, &user_emissions_data);
 
@@ -467,11 +437,9 @@ mod tests {
         let pool_1 = Address::generate(&e);
         let samwise = Address::generate(&e);
 
-        let backstop_emissions_config = BackstopEmissionConfig {
+        let backstop_emissions_data = BackstopEmissionData {
             expiration: BACKSTOP_EPOCH + 7 * 24 * 60 * 60,
             eps: 0_1000000,
-        };
-        let backstop_emissions_data = BackstopEmissionsData {
             index: 22222,
             last_time: BACKSTOP_EPOCH,
         };
@@ -481,7 +449,7 @@ mod tests {
         };
         e.as_contract(&backstop_id, || {
             storage::set_last_distribution_time(&e, &BACKSTOP_EPOCH);
-            storage::set_backstop_emis_config(&e, &pool_1, &backstop_emissions_config);
+
             storage::set_backstop_emis_data(&e, &pool_1, &backstop_emissions_data);
             storage::set_user_emis_data(&e, &pool_1, &samwise, &user_emissions_data);
 
@@ -573,11 +541,9 @@ mod tests {
         let pool_1 = Address::generate(&e);
         let samwise = Address::generate(&e);
 
-        let backstop_emissions_config = BackstopEmissionConfig {
+        let backstop_emissions_data = BackstopEmissionData {
             expiration: BACKSTOP_EPOCH + 7 * 24 * 60 * 60,
             eps: 0_1000000,
-        };
-        let backstop_emissions_data = BackstopEmissionsData {
             index: 22222,
             last_time: BACKSTOP_EPOCH,
         };
@@ -587,7 +553,7 @@ mod tests {
         };
         e.as_contract(&backstop_id, || {
             storage::set_last_distribution_time(&e, &BACKSTOP_EPOCH);
-            storage::set_backstop_emis_config(&e, &pool_1, &backstop_emissions_config);
+
             storage::set_backstop_emis_data(&e, &pool_1, &backstop_emissions_data);
             storage::set_user_emis_data(&e, &pool_1, &samwise, &user_emissions_data);
 
@@ -629,11 +595,9 @@ mod tests {
         let pool_1 = Address::generate(&e);
         let samwise = Address::generate(&e);
 
-        let backstop_emissions_config = BackstopEmissionConfig {
+        let backstop_emissions_data = BackstopEmissionData {
             expiration: BACKSTOP_EPOCH + 7 * 24 * 60 * 60,
             eps: 0_1000000,
-        };
-        let backstop_emissions_data = BackstopEmissionsData {
             index: 22222,
             last_time: block_timestamp + 1,
         };
@@ -643,7 +607,7 @@ mod tests {
         };
         e.as_contract(&backstop_id, || {
             storage::set_last_distribution_time(&e, &BACKSTOP_EPOCH);
-            storage::set_backstop_emis_config(&e, &pool_1, &backstop_emissions_config);
+
             storage::set_backstop_emis_data(&e, &pool_1, &backstop_emissions_data);
             storage::set_user_emis_data(&e, &pool_1, &samwise, &user_emissions_data);
 
@@ -681,11 +645,9 @@ mod tests {
         let pool_1 = Address::generate(&e);
         let samwise = Address::generate(&e);
 
-        let backstop_emissions_config = BackstopEmissionConfig {
+        let backstop_emissions_data = BackstopEmissionData {
             expiration: BACKSTOP_EPOCH + 7 * 24 * 60 * 60,
             eps: 0_1000000,
-        };
-        let backstop_emissions_data = BackstopEmissionsData {
             index: 22222,
             last_time: BACKSTOP_EPOCH,
         };
@@ -695,7 +657,7 @@ mod tests {
         };
         e.as_contract(&backstop_id, || {
             storage::set_last_distribution_time(&e, &BACKSTOP_EPOCH);
-            storage::set_backstop_emis_config(&e, &pool_1, &backstop_emissions_config);
+
             storage::set_backstop_emis_data(&e, &pool_1, &backstop_emissions_data);
             storage::set_user_emis_data(&e, &pool_1, &samwise, &user_emissions_data);
 

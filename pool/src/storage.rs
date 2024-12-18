@@ -75,20 +75,12 @@ pub struct ReserveData {
     pub last_time: u64, // the last block the data was updated
 }
 
-/// The configuration of emissions for the reserve b or d token
-///
-/// `@dev` If this is updated, ReserveEmissionsData MUST also be updated
-#[derive(Clone)]
-#[contracttype]
-pub struct ReserveEmissionsConfig {
-    pub expiration: u64,
-    pub eps: u64,
-}
-
 /// The emission data for the reserve b or d token
 #[derive(Clone)]
 #[contracttype]
-pub struct ReserveEmissionsData {
+pub struct ReserveEmissionData {
+    pub expiration: u64,
+    pub eps: u64,
     pub index: i128,
     pub last_time: u64,
 }
@@ -495,45 +487,11 @@ pub fn push_res_list(e: &Env, asset: &Address) -> u32 {
 
 /********** Reserve Emissions **********/
 
-/// Fetch the emission config for the reserve b or d token
-///
-/// ### Arguments
-/// * `res_token_index` - The d/bToken index for the reserve
-pub fn get_res_emis_config(e: &Env, res_token_index: &u32) -> Option<ReserveEmissionsConfig> {
-    let key = PoolDataKey::EmisConfig(*res_token_index);
-    get_persistent_default(
-        e,
-        &key,
-        || None,
-        LEDGER_THRESHOLD_SHARED,
-        LEDGER_BUMP_SHARED,
-    )
-}
-
-/// Set the emission config for the reserve b or d token
-///
-/// ### Arguments
-/// * `res_token_index` - The d/bToken index for the reserve
-/// * `res_emis_config` - The new emission config for the reserve token
-pub fn set_res_emis_config(
-    e: &Env,
-    res_token_index: &u32,
-    res_emis_config: &ReserveEmissionsConfig,
-) {
-    let key = PoolDataKey::EmisConfig(*res_token_index);
-    e.storage()
-        .persistent()
-        .set::<PoolDataKey, ReserveEmissionsConfig>(&key, res_emis_config);
-    e.storage()
-        .persistent()
-        .extend_ttl(&key, LEDGER_THRESHOLD_SHARED, LEDGER_BUMP_SHARED);
-}
-
 /// Fetch the emission data for the reserve b or d token
 ///
 /// ### Arguments
 /// * `res_token_index` - The d/bToken index for the reserve
-pub fn get_res_emis_data(e: &Env, res_token_index: &u32) -> Option<ReserveEmissionsData> {
+pub fn get_res_emis_data(e: &Env, res_token_index: &u32) -> Option<ReserveEmissionData> {
     let key = PoolDataKey::EmisData(*res_token_index);
     get_persistent_default(
         e,
@@ -549,11 +507,11 @@ pub fn get_res_emis_data(e: &Env, res_token_index: &u32) -> Option<ReserveEmissi
 /// ### Arguments
 /// * `res_token_index` - The d/bToken index for the reserve
 /// * `res_emis_data` - The new emission data for the reserve token
-pub fn set_res_emis_data(e: &Env, res_token_index: &u32, res_emis_data: &ReserveEmissionsData) {
+pub fn set_res_emis_data(e: &Env, res_token_index: &u32, res_emis_data: &ReserveEmissionData) {
     let key = PoolDataKey::EmisData(*res_token_index);
     e.storage()
         .persistent()
-        .set::<PoolDataKey, ReserveEmissionsData>(&key, res_emis_data);
+        .set::<PoolDataKey, ReserveEmissionData>(&key, res_emis_data);
     e.storage()
         .persistent()
         .extend_ttl(&key, LEDGER_THRESHOLD_SHARED, LEDGER_BUMP_SHARED);

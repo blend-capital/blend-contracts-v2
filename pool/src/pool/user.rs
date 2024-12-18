@@ -256,10 +256,7 @@ impl User {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        constants::SCALAR_7, storage, testutils, ReserveEmissionsConfig, ReserveEmissionsData,
-        UserEmissionData,
-    };
+    use crate::{constants::SCALAR_7, storage, testutils, ReserveEmissionData, UserEmissionData};
     use soroban_fixed_point_math::FixedPoint;
     use soroban_sdk::{
         map,
@@ -379,11 +376,9 @@ mod tests {
         let mut reserve_0 = testutils::default_reserve(&e);
         let starting_d_supply_0 = reserve_0.d_supply;
 
-        let emis_res_config = ReserveEmissionsConfig {
+        let emis_res_data = ReserveEmissionData {
             expiration: 20000000,
             eps: 0_1000000,
-        };
-        let emis_res_data = ReserveEmissionsData {
             index: 1000,
             last_time: 10000000, // 1000s elapsed
         };
@@ -403,7 +398,6 @@ mod tests {
 
         e.as_contract(&pool, || {
             let res_0_d_token_index = reserve_0.index * 2 + 0;
-            storage::set_res_emis_config(&e, &res_0_d_token_index, &emis_res_config);
             storage::set_res_emis_data(&e, &res_0_d_token_index, &emis_res_data);
             storage::set_user_emissions(&e, &samwise, &res_0_d_token_index, &emis_user_data);
 
@@ -471,11 +465,9 @@ mod tests {
         let mut reserve_0 = testutils::default_reserve(&e);
         let starting_d_supply_0 = reserve_0.d_supply;
 
-        let emis_res_config = ReserveEmissionsConfig {
+        let emis_res_data = ReserveEmissionData {
             expiration: 20000000,
             eps: 0_1000000,
-        };
-        let emis_res_data = ReserveEmissionsData {
             index: 1000,
             last_time: 10000000, // 1000s elapsed
         };
@@ -493,7 +485,6 @@ mod tests {
         };
         e.as_contract(&pool, || {
             let res_0_d_token_index = reserve_0.index * 2 + 0;
-            storage::set_res_emis_config(&e, &res_0_d_token_index, &emis_res_config);
             storage::set_res_emis_data(&e, &res_0_d_token_index, &emis_res_data);
             storage::set_user_emissions(&e, &samwise, &res_0_d_token_index, &emis_user_data);
 
@@ -689,11 +680,9 @@ mod tests {
         let mut reserve_0 = testutils::default_reserve(&e);
         let starting_b_token_supply = reserve_0.b_supply;
 
-        let emis_res_config = ReserveEmissionsConfig {
+        let emis_res_data = ReserveEmissionData {
             expiration: 20000000,
             eps: 0_1000000,
-        };
-        let emis_res_data = ReserveEmissionsData {
             index: 1000,
             last_time: 10000000, // 1000s elapsed
         };
@@ -712,7 +701,6 @@ mod tests {
         };
         e.as_contract(&pool, || {
             let res_0_d_token_index = reserve_0.index * 2 + 1;
-            storage::set_res_emis_config(&e, &res_0_d_token_index, &emis_res_config);
             storage::set_res_emis_data(&e, &res_0_d_token_index, &emis_res_data);
             storage::set_user_emissions(&e, &samwise, &res_0_d_token_index, &emis_user_data);
 
@@ -780,11 +768,9 @@ mod tests {
         let mut reserve_0 = testutils::default_reserve(&e);
         let starting_b_token_supply = reserve_0.b_supply;
 
-        let emis_res_config = ReserveEmissionsConfig {
+        let emis_res_data = ReserveEmissionData {
             expiration: 20000000,
             eps: 0_1000000,
-        };
-        let emis_res_data = ReserveEmissionsData {
             index: 1000,
             last_time: 10000000, // 1000s elapsed
         };
@@ -803,7 +789,6 @@ mod tests {
         };
         e.as_contract(&pool, || {
             let res_0_d_token_index = reserve_0.index * 2 + 1;
-            storage::set_res_emis_config(&e, &res_0_d_token_index, &emis_res_config);
             storage::set_res_emis_data(&e, &res_0_d_token_index, &emis_res_data);
             storage::set_user_emissions(&e, &samwise, &res_0_d_token_index, &emis_user_data);
 
@@ -929,11 +914,9 @@ mod tests {
         let mut reserve_0 = testutils::default_reserve(&e);
         let starting_b_token_supply = reserve_0.b_supply;
 
-        let emis_res_config = ReserveEmissionsConfig {
+        let emis_res_data = ReserveEmissionData {
             expiration: 20000000,
             eps: 0_1000000,
-        };
-        let emis_res_data = ReserveEmissionsData {
             index: 1000,
             last_time: 10000000, // 1000s elapsed
         };
@@ -952,7 +935,6 @@ mod tests {
         };
         e.as_contract(&pool, || {
             let res_0_d_token_index = reserve_0.index * 2 + 1;
-            storage::set_res_emis_config(&e, &res_0_d_token_index, &emis_res_config);
             storage::set_res_emis_data(&e, &res_0_d_token_index, &emis_res_data);
             storage::set_user_emissions(&e, &samwise, &res_0_d_token_index, &emis_user_data);
 
@@ -1020,11 +1002,9 @@ mod tests {
         let mut reserve_0 = testutils::default_reserve(&e);
         let starting_b_token_supply = reserve_0.b_supply;
 
-        let emis_res_config = ReserveEmissionsConfig {
+        let emis_res_data = ReserveEmissionData {
             expiration: 20000000,
             eps: 0_1000000,
-        };
-        let emis_res_data = ReserveEmissionsData {
             index: 1000,
             last_time: 10000000, // 1000s elapsed
         };
@@ -1043,7 +1023,6 @@ mod tests {
         };
         e.as_contract(&pool, || {
             let res_0_d_token_index = reserve_0.index * 2 + 1;
-            storage::set_res_emis_config(&e, &res_0_d_token_index, &emis_res_config);
             storage::set_res_emis_data(&e, &res_0_d_token_index, &emis_res_data);
             storage::set_user_emissions(&e, &samwise, &res_0_d_token_index, &emis_user_data);
 

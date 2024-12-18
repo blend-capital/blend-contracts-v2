@@ -8,11 +8,11 @@ use crate::{
     constants::{BACKSTOP_EPOCH, SCALAR_7},
     dependencies::EmitterClient,
     errors::BackstopError,
-    storage::{self, BackstopEmissionConfig, BackstopEmissionsData},
+    storage::{self, BackstopEmissionData},
     PoolBalance,
 };
 
-use super::distributor::update_emission_data_with_config;
+use super::distributor::update_emission_data;
 
 /// Add a pool to the reward zone. If the reward zone is full, attempt to swap it with the pool to remove.
 pub fn add_to_reward_zone(e: &Env, to_add: Address, to_remove: Address) {
@@ -122,7 +122,7 @@ pub fn gulp_emissions(e: &Env) -> i128 {
         let new_pool_backstop_tokens = share
             .fixed_mul_floor(total_backstop_emissions, SCALAR_7)
             .unwrap_optimized();
-        set_backstop_emission_config(e, &rz_pool, &cur_pool_balance, new_pool_backstop_tokens);
+        set_backstop_emission_eps(e, &rz_pool, &cur_pool_balance, new_pool_backstop_tokens);
     }
     new_emissions
 }
@@ -150,43 +150,46 @@ pub fn gulp_pool_emissions(e: &Env, pool_id: &Address) -> i128 {
 }
 
 /// Set a new EPS for the backstop
-pub fn set_backstop_emission_config(
+pub fn set_backstop_emission_eps(
     e: &Env,
     pool_id: &Address,
     pool_balance: &PoolBalance,
     new_tokens: i128,
 ) {
     let mut tokens_left_to_emit = new_tokens;
-    if let Some(emis_config) = storage::get_backstop_emis_config(e, pool_id) {
-        // a previous config exists - update with old config before setting new EPS
-        let mut emission_data =
-            update_emission_data_with_config(e, pool_id, &pool_balance, &emis_config);
+    let expiration = e.ledger().timestamp() + 7 * 24 * 60 * 60;
+
+    if let Some(mut emission_data) = update_emission_data(e, pool_id, &pool_balance) {
+        // a previous data exists - update with old data before setting new EPS
         if emission_data.last_time != e.ledger().timestamp() {
             // force the emission data to be updated to the current timestamp
             emission_data.last_time = e.ledger().timestamp();
             storage::set_backstop_emis_data(e, pool_id, &emission_data);
         }
         // determine the amount of tokens not emitted from the last config
-        if emis_config.expiration > e.ledger().timestamp() {
-            let time_since_last_emission = emis_config.expiration - e.ledger().timestamp();
-            let tokens_since_last_emission = i128(emis_config.eps * time_since_last_emission);
+        if emission_data.expiration > e.ledger().timestamp() {
+            let time_since_last_emission = emission_data.expiration - e.ledger().timestamp();
+            let tokens_since_last_emission = i128(emission_data.eps * time_since_last_emission);
             tokens_left_to_emit += tokens_since_last_emission;
         }
+        let eps = u64(tokens_left_to_emit / (7 * 24 * 60 * 60)).unwrap_optimized();
+        emission_data.eps = eps;
+        emission_data.expiration = expiration;
+        storage::set_backstop_emis_data(e, pool_id, &emission_data);
     } else {
         // first time the pool's backstop is receiving emissions - ensure data is written
+        let eps = u64(tokens_left_to_emit / (7 * 24 * 60 * 60)).unwrap_optimized();
         storage::set_backstop_emis_data(
             e,
             pool_id,
-            &BackstopEmissionsData {
+            &BackstopEmissionData {
+                eps,
+                expiration,
                 index: 0,
                 last_time: e.ledger().timestamp(),
             },
         );
     }
-    let expiration = e.ledger().timestamp() + 7 * 24 * 60 * 60;
-    let eps = u64(tokens_left_to_emit / (7 * 24 * 60 * 60)).unwrap_optimized();
-    let backstop_emis_config = BackstopEmissionConfig { expiration, eps };
-    storage::set_backstop_emis_config(e, pool_id, &backstop_emis_config);
 }
 
 #[cfg(test)]
@@ -200,7 +203,6 @@ mod tests {
 
     use crate::{
         backstop::PoolBalance,
-        storage::BackstopEmissionConfig,
         testutils::{create_backstop, create_blnd_token, create_emitter},
     };
 
@@ -237,21 +239,17 @@ mod tests {
         let reward_zone: Vec<Address> = vec![&e, pool_1.clone(), pool_2.clone(), pool_3.clone()];
 
         // setup pool 1 to have ongoing emissions
-        let pool_1_emissions_config = BackstopEmissionConfig {
+        let pool_1_emissions_data = BackstopEmissionData {
             expiration: BACKSTOP_EPOCH + 1000,
             eps: 0_1000000,
-        };
-        let pool_1_emissions_data = BackstopEmissionsData {
             index: 887766,
             last_time: BACKSTOP_EPOCH - 12345,
         };
 
         // setup pool 2 to have expired emissions
-        let pool_2_emissions_config = BackstopEmissionConfig {
+        let pool_2_emissions_data = BackstopEmissionData {
             expiration: BACKSTOP_EPOCH - 12345,
             eps: 0_0500000,
-        };
-        let pool_2_emissions_data = BackstopEmissionsData {
             index: 453234,
             last_time: BACKSTOP_EPOCH - 12345,
         };
@@ -259,10 +257,8 @@ mod tests {
         e.as_contract(&backstop, || {
             storage::set_last_distribution_time(&e, &(emitter_distro_time - 7 * 24 * 60 * 60));
             storage::set_reward_zone(&e, &reward_zone);
-            storage::set_backstop_emis_config(&e, &pool_1, &pool_1_emissions_config);
             storage::set_backstop_emis_data(&e, &pool_1, &pool_1_emissions_data);
             storage::set_pool_emissions(&e, &pool_1, 100_123_0000000);
-            storage::set_backstop_emis_config(&e, &pool_2, &pool_2_emissions_config);
             storage::set_backstop_emis_data(&e, &pool_2, &pool_2_emissions_data);
             storage::set_pool_balance(
                 &e,
@@ -313,34 +309,29 @@ mod tests {
             assert_eq!(storage::get_pool_emissions(&e, &pool_3), 90_720_0000000);
 
             // validate backstop emissions
-            let new_pool_1_config =
-                storage::get_backstop_emis_config(&e, &pool_1).unwrap_optimized();
+
             let new_pool_1_data = storage::get_backstop_emis_data(&e, &pool_1).unwrap_optimized();
-            assert_eq!(new_pool_1_config.eps, 0_2101653);
+            assert_eq!(new_pool_1_data.eps, 0_2101653);
             assert_eq!(
-                new_pool_1_config.expiration,
+                new_pool_1_data.expiration,
                 BACKSTOP_EPOCH + 7 * 24 * 60 * 60
             );
             assert_eq!(new_pool_1_data.index, 949491);
             assert_eq!(new_pool_1_data.last_time, BACKSTOP_EPOCH);
 
-            let new_pool_2_config =
-                storage::get_backstop_emis_config(&e, &pool_2).unwrap_optimized();
             let new_pool_2_data = storage::get_backstop_emis_data(&e, &pool_2).unwrap_optimized();
-            assert_eq!(new_pool_2_config.eps, 0_1400000);
+            assert_eq!(new_pool_2_data.eps, 0_1400000);
             assert_eq!(
-                new_pool_2_config.expiration,
+                new_pool_2_data.expiration,
                 BACKSTOP_EPOCH + 7 * 24 * 60 * 60
             );
             assert_eq!(new_pool_2_data.index, 453234);
             assert_eq!(new_pool_2_data.last_time, BACKSTOP_EPOCH);
 
-            let new_pool_3_config =
-                storage::get_backstop_emis_config(&e, &pool_3).unwrap_optimized();
             let new_pool_3_data = storage::get_backstop_emis_data(&e, &pool_3).unwrap_optimized();
-            assert_eq!(new_pool_3_config.eps, 0_3500000);
+            assert_eq!(new_pool_3_data.eps, 0_3500000);
             assert_eq!(
-                new_pool_3_config.expiration,
+                new_pool_3_data.expiration,
                 BACKSTOP_EPOCH + 7 * 24 * 60 * 60
             );
             assert_eq!(new_pool_3_data.index, 0);
@@ -380,21 +371,19 @@ mod tests {
         let reward_zone: Vec<Address> = vec![&e, pool_1.clone(), pool_2.clone(), pool_3.clone()];
 
         // setup pool 1 to have ongoing emissions
-        let pool_1_emissions_config = BackstopEmissionConfig {
+
+        let pool_1_emissions_data = BackstopEmissionData {
             expiration: BACKSTOP_EPOCH + 1000,
             eps: 0_1000000,
-        };
-        let pool_1_emissions_data = BackstopEmissionsData {
             index: 887766,
             last_time: BACKSTOP_EPOCH - 12345,
         };
 
         // setup pool 2 to have expired emissions
-        let pool_2_emissions_config = BackstopEmissionConfig {
+
+        let pool_2_emissions_data = BackstopEmissionData {
             expiration: BACKSTOP_EPOCH - 12345,
             eps: 0_0500000,
-        };
-        let pool_2_emissions_data = BackstopEmissionsData {
             index: 453234,
             last_time: BACKSTOP_EPOCH - 12345,
         };
@@ -402,10 +391,8 @@ mod tests {
         e.as_contract(&backstop, || {
             storage::set_last_distribution_time(&e, &(emitter_distro_time - 59 * 60));
             storage::set_reward_zone(&e, &reward_zone);
-            storage::set_backstop_emis_config(&e, &pool_1, &pool_1_emissions_config);
             storage::set_backstop_emis_data(&e, &pool_1, &pool_1_emissions_data);
             storage::set_pool_emissions(&e, &pool_1, 100_123_0000000);
-            storage::set_backstop_emis_config(&e, &pool_2, &pool_2_emissions_config);
             storage::set_backstop_emis_data(&e, &pool_2, &pool_2_emissions_data);
             storage::set_pool_balance(
                 &e,
