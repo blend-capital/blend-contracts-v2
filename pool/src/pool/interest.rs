@@ -135,6 +135,7 @@ mod tests {
             r_two: 0_5000000,
             r_three: 1_5000000,
             reactivity: 0_0000020,
+            collateral_cap: 1000000000000000000,
             index: 0,
         };
         let ir_mod: i128 = 1_000_000_000;
@@ -171,6 +172,7 @@ mod tests {
             r_two: 0_5000000,
             r_three: 1_5000000,
             reactivity: 0_0000020,
+            collateral_cap: 1000000000000000000,
             index: 0,
         };
         let ir_mod: i128 = 1_000_000_000;
@@ -207,6 +209,7 @@ mod tests {
             r_two: 0_5000000,
             r_three: 1_5000000,
             reactivity: 0_0000020,
+            collateral_cap: 1000000000000000000,
             index: 0,
         };
         let ir_mod: i128 = 1_000_000_000;
@@ -243,6 +246,7 @@ mod tests {
             r_two: 0_5000000,
             r_three: 1_5000000,
             reactivity: 0_0000020,
+            collateral_cap: 1000000000000000000,
             index: 0,
         };
         let ir_mod: i128 = 9_997_000_000;
@@ -278,6 +282,7 @@ mod tests {
             r_two: 0_5000000,
             r_three: 1_5000000,
             reactivity: 0_0000020,
+            collateral_cap: 1000000000000000000,
             index: 0,
         };
         let ir_mod: i128 = 0_150_000_000;
@@ -313,6 +318,7 @@ mod tests {
             r_two: 0_5000000,
             r_three: 1_5000000,
             reactivity: 0_0000020,
+            collateral_cap: 1000000000000000000,
             index: 0,
         };
         let ir_mod: i128 = 0_100_000_000;
@@ -349,6 +355,7 @@ mod tests {
             r_two: 0,
             r_three: 0,
             reactivity: 0_0000020,
+            collateral_cap: 1000000000000000000,
             index: 0,
         };
         let ir_mod: i128 = 1_000_000_000;

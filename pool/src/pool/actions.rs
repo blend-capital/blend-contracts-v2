@@ -158,6 +158,9 @@ pub fn build_actions_from_request(
                 let b_tokens_minted = reserve.to_b_token_down(request.amount);
                 from_state.add_collateral(e, &mut reserve, b_tokens_minted);
                 actions.add_for_spender_transfer(&reserve.asset, request.amount);
+                if reserve.to_asset_from_b_token(reserve.b_supply) > reserve.collateral_cap {
+                    panic_with_error!(e, PoolError::ExceededCollateralCap);
+                }
                 pool.cache_reserve(reserve);
                 PoolEvents::supply_collateral(
                     e,
@@ -1829,6 +1832,45 @@ mod tests {
                     amount: 1_0000000,
                 },
             ];
+
+            build_actions_from_request(&e, &mut pool, &samwise, requests, false);
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #1220)")]
+    fn test_exceed_collateral_cap() {
+        let e = Env::default();
+        e.mock_all_auths();
+
+        let bombadil = Address::generate(&e);
+        let samwise = Address::generate(&e);
+        let pool = testutils::create_pool(&e);
+
+        let (underlying, _) = testutils::create_token_contract(&e, &bombadil);
+        let (mut reserve_config, reserve_data) = testutils::default_reserve_meta();
+        reserve_config.collateral_cap = 10_0000000; // Set low collateral cap
+        testutils::create_reserve(&e, &pool, &underlying, &reserve_config, &reserve_data);
+
+        let pool_config = PoolConfig {
+            oracle: Address::generate(&e),
+            bstop_rate: 0_2000000,
+            status: 0,
+            max_positions: 1,
+        };
+
+        let requests = vec![
+            &e,
+            Request {
+                request_type: RequestType::SupplyCollateral as u32,
+                address: underlying.clone(),
+                amount: 20_0000000, // Try to supply more than cap
+            },
+        ];
+
+        e.as_contract(&pool, || {
+            storage::set_pool_config(&e, &pool_config);
+            let mut pool = Pool::load(&e);
 
             build_actions_from_request(&e, &mut pool, &samwise, requests, false);
         });

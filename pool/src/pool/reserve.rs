@@ -26,6 +26,7 @@ pub struct Reserve {
     pub b_supply: i128,        // the total supply of b tokens
     pub d_supply: i128,        // the total supply of d tokens
     pub backstop_credit: i128, // the total amount of underlying tokens owed to the backstop
+    pub collateral_cap: i128, // the total amount of underlying tokens that can be used as collateral
 }
 
 impl Reserve {
@@ -57,6 +58,7 @@ impl Reserve {
             b_supply: reserve_data.b_supply,
             d_supply: reserve_data.d_supply,
             backstop_credit: reserve_data.backstop_credit,
+            collateral_cap: reserve_config.collateral_cap,
         };
 
         // short circuit if the reserve has already been updated this ledger

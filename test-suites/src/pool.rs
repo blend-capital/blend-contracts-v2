@@ -18,5 +18,6 @@ pub fn default_reserve_metadata() -> ReserveConfig {
         r_three: 1_5000000,
         reactivity: 0_0000020, // 2e-6
         index: 0,
+        collateral_cap: 1000000000000000000,
     }
 }
