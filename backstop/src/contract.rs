@@ -100,8 +100,17 @@ pub trait Backstop {
 
     /********** Emissions **********/
 
-    /// Consume emissions from the Emitter and distribute them to backstops and pools in the reward zone
-    fn gulp_emissions(e: Env);
+    /// Prepare emissions to be distributed to reward zone pools and their backstops
+    fn distribute(e: Env);
+
+    /// Distribute emissions to a reward zone pool and its backstop
+    ///
+    /// ### Arguments
+    /// * `pool` - The address of the pool to distribute emissions to
+    ///
+    /// ### Errors
+    /// If the pool is not in the reward zone
+    fn gulp_emissions(e: Env, pool: Address);
 
     /// Add a pool to the reward zone, and if the reward zone is full, a pool to remove
     ///
@@ -264,9 +273,16 @@ impl Backstop for BackstopContract {
 
     /********** Emissions **********/
 
-    fn gulp_emissions(e: Env) {
+    fn distribute(e: Env) {
         storage::extend_instance(&e);
-        let new_tokens_emitted = emissions::gulp_emissions(&e);
+        let new_emissions = emissions::distribute(&e);
+
+        BackstopEvents::distribute(&e, new_emissions);
+    }
+
+    fn gulp_emissions(e: Env, pool: Address) {
+        storage::extend_instance(&e);
+        let new_tokens_emitted = emissions::gulp_emissions(&e, &pool);
 
         BackstopEvents::gulp_emissions(&e, new_tokens_emitted);
     }

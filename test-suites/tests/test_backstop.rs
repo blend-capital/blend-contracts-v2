@@ -138,6 +138,10 @@ fn test_backstop() {
     // Simulate the pool backstop making money and progress 6d23h (6d23hr total emissions for sam)
     // @dev: setup jumps 1 hour and 1 minute
     fixture.jump(60 * 60 * 24 * 7 - 60 * 60);
+    // Start the next emission cycle
+    fixture.emitter.distribute();
+    fixture.backstop.distribute();
+    fixture.backstop.gulp_emissions(&pool.address);
     let amount = 2_000 * SCALAR_7;
     fixture.lp.approve(
         &frodo,
@@ -209,9 +213,6 @@ fn test_backstop() {
         ]
     );
 
-    // Start the next emission cycle
-    fixture.emitter.distribute();
-    fixture.backstop.gulp_emissions();
     assert_eq!(fixture.env.auths().len(), 0);
 
     // Sam queues 100% of position for withdrawal
@@ -274,7 +275,8 @@ fn test_backstop() {
     // Start the next emission cycle and jump 7 days (13d23hr total emissions for sam)
     fixture.jump(60 * 60 * 24 * 7);
     fixture.emitter.distribute();
-    fixture.backstop.gulp_emissions();
+    fixture.backstop.distribute();
+    fixture.backstop.gulp_emissions(&pool.address);
 
     // Sam dequeues half of the withdrawal
     let amount = 6_250 * SCALAR_7; // shares
@@ -326,7 +328,8 @@ fn test_backstop() {
     // Start the next emission cycle and jump 7 days (20d23hr total emissions for sam)
     fixture.jump(60 * 60 * 24 * 7);
     fixture.emitter.distribute();
-    fixture.backstop.gulp_emissions();
+    fixture.backstop.distribute();
+    fixture.backstop.gulp_emissions(&pool.address);
 
     // Backstop loses money
     let amount = 1_000 * SCALAR_7;
@@ -373,7 +376,8 @@ fn test_backstop() {
 
     // Jump to the end of the withdrawal period (27d23hr total emissions for sam)
     fixture.jump(60 * 60 * 24 * 16 + 1);
-
+    // fixture.backstop.distribute();
+    fixture.backstop.gulp_emissions(&pool.address);
     // Sam withdraws the queue position
     let amount = 6_250 * SCALAR_7; // shares
     let result = fixture.backstop.withdraw(&sam, &pool.address, &amount);

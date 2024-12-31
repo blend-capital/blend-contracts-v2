@@ -181,7 +181,7 @@ fn test_liquidations() {
         fixture.jump(60 * 60 * 24 * 7);
         // Update emissions
         fixture.emitter.distribute();
-        fixture.backstop.gulp_emissions();
+        fixture.backstop.gulp_emissions(&pool_fixture.pool.address);
         pool_fixture.pool.gulp_emissions();
     }
     // Start an interest auction

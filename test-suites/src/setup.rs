@@ -80,7 +80,8 @@ pub fn create_fixture_with_data<'a>(wasm: bool) -> TestFixture<'a> {
 
     // enable emissions
     fixture.emitter.distribute();
-    fixture.backstop.gulp_emissions();
+    fixture.backstop.distribute();
+    fixture.backstop.gulp_emissions(&pool_fixture.pool.address);
     pool_fixture.pool.gulp_emissions();
 
     fixture.jump(60);

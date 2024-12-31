@@ -18,6 +18,7 @@ pub fn execute_queue_withdrawal(
 
     // update emissions
     emissions::update_emissions(e, pool_address, &pool_balance, from, &user_balance);
+    emissions::gulp_emissions(e, pool_address);
 
     user_balance.queue_shares_for_withdrawal(e, amount);
     pool_balance.queue_for_withdraw(amount);
@@ -37,6 +38,7 @@ pub fn execute_dequeue_withdrawal(e: &Env, from: &Address, pool_address: &Addres
 
     // update emissions
     emissions::update_emissions(e, pool_address, &pool_balance, from, &user_balance);
+    emissions::gulp_emissions(e, pool_address);
 
     user_balance.dequeue_shares_for_withdrawal(e, amount, false);
     user_balance.add_shares(amount);

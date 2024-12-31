@@ -1,6 +1,6 @@
 use crate::{
-    constants::SCALAR_7, contract::require_nonnegative, dependencies::CometClient, storage,
-    BackstopError,
+    constants::SCALAR_7, contract::require_nonnegative, dependencies::CometClient, emissions,
+    storage, BackstopError,
 };
 use sep_41_token::TokenClient;
 use soroban_fixed_point_math::FixedPoint;
@@ -32,7 +32,6 @@ pub fn execute_donate(e: &Env, from: &Address, pool_address: &Address, amount: i
 
     let mut pool_balance = storage::get_pool_balance(e, pool_address);
     require_is_from_pool_factory(e, pool_address, pool_balance.shares);
-
     let backstop_token = TokenClient::new(e, &storage::get_backstop_token(e));
     backstop_token.transfer_from(
         &e.current_contract_address(),

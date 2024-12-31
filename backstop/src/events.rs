@@ -75,6 +75,17 @@ impl BackstopEvents {
         e.events().publish(topics, (amount, tokens_out));
     }
 
+    /// Emitted when new emissions are prepared
+    /// - topics - `["distribute"]`
+    /// - data - `[new_tokens_emitted: i128]`
+    ///
+    /// ### Arguments
+    /// * `new_tokens_emitted` - The amount of new tokens emitted
+    pub fn distribute(e: &Env, new_tokens_emitted: i128) {
+        let topics = (Symbol::new(e, "distribute"),);
+        e.events().publish(topics, new_tokens_emitted);
+    }
+
     /// Emitted when new emissions are gulped
     ///
     /// - topics - `["gulp_emissions"]`

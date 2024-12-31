@@ -365,7 +365,8 @@ fn test_wasm_happy_path() {
 
     // Distribute emissions
     fixture.emitter.distribute();
-    fixture.backstop.gulp_emissions();
+    fixture.backstop.distribute();
+    fixture.backstop.gulp_emissions(&pool_fixture.pool.address);
     pool_fixture.pool.gulp_emissions();
 
     // Frodo claim emissions
@@ -417,12 +418,14 @@ fn test_wasm_happy_path() {
     // Let 51 weeks go by and call update to validate emissions won't get missed
     fixture.jump(60 * 60 * 24 * 7 * 51);
     fixture.emitter.distribute();
-    fixture.backstop.gulp_emissions();
+    fixture.backstop.distribute();
+    fixture.backstop.gulp_emissions(&pool_fixture.pool.address);
     pool_fixture.pool.gulp_emissions();
     // Allow another week go by to distribute missed emissions
     fixture.jump(60 * 60 * 24 * 7);
     fixture.emitter.distribute();
-    fixture.backstop.gulp_emissions();
+    fixture.backstop.distribute();
+    fixture.backstop.gulp_emissions(&pool_fixture.pool.address);
     pool_fixture.pool.gulp_emissions();
 
     // Frodo claims a year worth of backstop emissions

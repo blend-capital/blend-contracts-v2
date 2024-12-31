@@ -15,6 +15,7 @@ pub fn execute_deposit(e: &Env, from: &Address, pool_address: &Address, amount: 
     let mut user_balance = storage::get_user_balance(e, pool_address, from);
 
     emissions::update_emissions(e, pool_address, &pool_balance, from, &user_balance);
+    emissions::gulp_emissions(e, pool_address);
 
     let backstop_token_client = TokenClient::new(e, &storage::get_backstop_token(e));
     backstop_token_client.transfer(from, &e.current_contract_address(), &amount);

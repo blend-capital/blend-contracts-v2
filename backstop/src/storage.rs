@@ -49,6 +49,7 @@ const LAST_DISTRO_KEY: &str = "LastDist";
 const REWARD_ZONE_KEY: &str = "RZ";
 const DROP_LIST_KEY: &str = "DropList";
 const LP_TOKEN_VAL_KEY: &str = "LPTknVal";
+const GULP_EMISSION_INDEX_KEY: &str = "GulpIndex";
 
 #[derive(Clone)]
 #[contracttype]
@@ -64,7 +65,7 @@ pub enum BackstopDataKey {
     PoolBalance(Address),
     PoolUSDC(Address),
     PoolEmis(Address),
-    BEmisCfg(Address),
+    BackstopGulpIndex(Address),
     BEmisData(Address),
     UEmisData(PoolUserKey),
 }
@@ -363,6 +364,64 @@ pub fn set_pool_emissions(e: &Env, pool: &Address, emissions: i128) {
 }
 
 /********** Backstop Depositor Emissions **********/
+
+/// Get the gulp emission index
+/// The index is used to calculate the amount of tokens to distribute to the backstop
+pub fn get_gulp_index(e: &Env) -> i128 {
+    get_persistent_default(
+        e,
+        &Symbol::new(&e, GULP_EMISSION_INDEX_KEY),
+        || 0i128,
+        LEDGER_THRESHOLD_SHARED,
+        LEDGER_BUMP_SHARED,
+    )
+}
+
+/// Set the backstop's emission index
+/// The index is used to calculate the amount of tokens to distribute to the backstop
+///
+/// ### Arguments
+/// * 'index' - The index of the backstop's emissions
+pub fn set_gulp_index(e: &Env, index: &i128) {
+    e.storage()
+        .persistent()
+        .set::<Symbol, i128>(&Symbol::new(&e, GULP_EMISSION_INDEX_KEY), index);
+    e.storage().persistent().extend_ttl(
+        &Symbol::new(&e, GULP_EMISSION_INDEX_KEY),
+        LEDGER_THRESHOLD_SHARED,
+        LEDGER_BUMP_SHARED,
+    );
+}
+
+/// Get the backstop - pool's gulp index
+///
+/// ### Arguments
+/// * `pool` - The pool
+pub fn get_backstop_gulp_index(e: &Env, pool: &Address) -> i128 {
+    let key = BackstopDataKey::BackstopGulpIndex(pool.clone());
+    get_persistent_default(
+        e,
+        &key,
+        || 0i128,
+        LEDGER_THRESHOLD_SHARED,
+        LEDGER_BUMP_SHARED,
+    )
+}
+
+/// Set the backstop - pool's gulp index
+///
+/// ### Arguments
+/// * `pool` - The pool
+/// * `index` - The index of the backstop's emissions
+pub fn set_backstop_gulp_index(e: &Env, pool: &Address, index: &i128) {
+    let key = BackstopDataKey::BackstopGulpIndex(pool.clone());
+    e.storage()
+        .persistent()
+        .set::<BackstopDataKey, i128>(&key, index);
+    e.storage()
+        .persistent()
+        .extend_ttl(&key, LEDGER_THRESHOLD_SHARED, LEDGER_BUMP_SHARED);
+}
 
 /// Get the pool's backstop emissions data
 ///

@@ -85,7 +85,9 @@ fn test_emitter_no_reward_zone() {
     fixture.jump(6 * 24 * 60 * 60);
     let result = fixture.emitter.distribute();
     assert_eq!(result, (13 * 24 * 60 * 60) * SCALAR_7); // 1 token per second are emitted
-    let result = fixture.backstop.try_gulp_emissions();
+    let result = fixture
+        .backstop
+        .try_gulp_emissions(&pool_fixture.pool.address);
     assert!(result.is_err());
 
     assert_eq!(fixture.env.auths().len(), 0);
@@ -130,7 +132,7 @@ fn test_emitter_no_reward_zone() {
     fixture
         .backstop
         .add_reward(&pool_fixture.pool.address, &Address::generate(&fixture.env));
-    fixture.backstop.gulp_emissions();
+    fixture.backstop.gulp_emissions(&pool_fixture.pool.address);
 
     let result = pool_fixture.pool.gulp_emissions();
     assert_eq!(result, (13 * 24 * 60 * 60) * 300_0000);

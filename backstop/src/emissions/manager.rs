@@ -17,6 +17,7 @@ use super::distributor::update_emission_data;
 /// Add a pool to the reward zone. If the reward zone is full, attempt to swap it with the pool to remove.
 pub fn add_to_reward_zone(e: &Env, to_add: Address, to_remove: Address) {
     let mut reward_zone = storage::get_reward_zone(e);
+    let gulp_index = storage::get_gulp_index(e);
     let max_rz_len = if e.ledger().timestamp() < BACKSTOP_EPOCH {
         10
     } else {
@@ -38,6 +39,7 @@ pub fn add_to_reward_zone(e: &Env, to_add: Address, to_remove: Address) {
     if max_rz_len > i128(reward_zone.len()) {
         // there is room in the reward zone. Add "to_add".
         reward_zone.push_front(to_add.clone());
+        storage::set_backstop_gulp_index(&e, &to_add, &gulp_index);
     } else {
         // swap to_add for to_remove
         let to_remove_index = reward_zone.first_index_of(to_remove.clone());
@@ -54,6 +56,10 @@ pub fn add_to_reward_zone(e: &Env, to_add: Address, to_remove: Address) {
                 if pool_data.tokens <= storage::get_pool_balance(e, &to_remove).tokens {
                     panic_with_error!(e, BackstopError::InvalidRewardZoneEntry);
                 }
+
+                // Gulp emissions from "to_remove" and set "to_add" to the current gulp index
+                gulp_emissions(e, &to_remove);
+                storage::set_backstop_gulp_index(&e, &to_add, &gulp_index);
                 reward_zone.set(idx, to_add.clone());
             }
             None => panic_with_error!(e, BackstopError::InvalidRewardZoneEntry),
@@ -63,9 +69,7 @@ pub fn add_to_reward_zone(e: &Env, to_add: Address, to_remove: Address) {
     storage::set_reward_zone(e, &reward_zone);
 }
 
-/// Assign emissions from the Emitter to backstops and pools in the reward zone
-#[allow(clippy::zero_prefixed_literal)]
-pub fn gulp_emissions(e: &Env) -> i128 {
+pub fn distribute(e: &Env) -> i128 {
     let reward_zone = storage::get_reward_zone(e);
     let rz_len = reward_zone.len();
     // reward zone must have at least one pool for emissions to start
@@ -83,15 +87,8 @@ pub fn gulp_emissions(e: &Env) -> i128 {
         panic_with_error!(e, BackstopError::BadRequest);
     }
     storage::set_last_distribution_time(e, &emitter_last_distribution);
+    let prev_index = storage::get_gulp_index(e);
     let new_emissions = i128(emitter_last_distribution - last_distribution) * SCALAR_7; // emitter releases 1 token per second
-    let total_backstop_emissions = new_emissions
-        .fixed_mul_floor(0_7000000, SCALAR_7)
-        .unwrap_optimized();
-    let total_pool_emissions = new_emissions
-        .fixed_mul_floor(0_3000000, SCALAR_7)
-        .unwrap_optimized();
-
-    let mut rz_balance: Vec<PoolBalance> = vec![e];
 
     // fetch total tokens of BLND in the reward zone
     let mut total_non_queued_tokens: i128 = 0;
@@ -99,30 +96,48 @@ pub fn gulp_emissions(e: &Env) -> i128 {
         let rz_pool = reward_zone.get(rz_pool_index).unwrap_optimized();
         let pool_balance = storage::get_pool_balance(e, &rz_pool);
         total_non_queued_tokens += pool_balance.non_queued_tokens();
-        rz_balance.push_back(pool_balance);
     }
 
-    // store pools EPS and distribute emissions to backstop depositors
-    for rz_pool_index in 0..rz_len {
-        let rz_pool = reward_zone.get(rz_pool_index).unwrap_optimized();
-        let cur_pool_balance = rz_balance.pop_front_unchecked();
-        let cur_pool_non_queued_tokens = cur_pool_balance.non_queued_tokens();
-        let share = cur_pool_non_queued_tokens
+    let new_index = prev_index
+        + new_emissions
             .fixed_div_floor(total_non_queued_tokens, SCALAR_7)
             .unwrap_optimized();
+    storage::set_gulp_index(e, &new_index);
 
-        // store new emissions for pool
-        let new_pool_emissions = share
-            .fixed_mul_floor(total_pool_emissions, SCALAR_7)
-            .unwrap_optimized();
-        let current_emissions = storage::get_pool_emissions(e, &rz_pool);
-        storage::set_pool_emissions(e, &rz_pool, current_emissions + new_pool_emissions);
+    return new_emissions;
+}
 
-        // distribute backstop depositor emissions and store backstop EPS
-        let new_pool_backstop_tokens = share
-            .fixed_mul_floor(total_backstop_emissions, SCALAR_7)
+/// Assign backstop and pool emissions to `pool` based on the reward zone and the backstop emissions index
+#[allow(clippy::zero_prefixed_literal)]
+pub fn gulp_emissions(e: &Env, pool: &Address) -> i128 {
+    let reward_zone = storage::get_reward_zone(e);
+
+    let mut new_emissions = 0;
+
+    if !reward_zone.contains(pool) {
+        return new_emissions;
+    }
+    let gulp_index = storage::get_gulp_index(e);
+    let mut backstop_gulp_index = storage::get_backstop_gulp_index(e, pool);
+    let pool_balance = storage::get_pool_balance(e, pool);
+    let current_pool_emissions = storage::get_pool_emissions(e, &pool);
+    if backstop_gulp_index < gulp_index {
+        new_emissions = pool_balance
+            .non_queued_tokens()
+            .fixed_mul_floor(gulp_index - backstop_gulp_index, SCALAR_7)
             .unwrap_optimized();
-        set_backstop_emission_eps(e, &rz_pool, &cur_pool_balance, new_pool_backstop_tokens);
+        let new_backstop_emissions = new_emissions
+            .fixed_mul_floor(0_7000000, SCALAR_7)
+            .unwrap_optimized();
+        let new_pool_emissions = new_emissions
+            .fixed_mul_floor(0_3000000, SCALAR_7)
+            .unwrap_optimized();
+        backstop_gulp_index = gulp_index;
+
+        storage::set_backstop_gulp_index(e, pool, &backstop_gulp_index);
+        storage::set_pool_balance(e, pool, &pool_balance);
+        storage::set_pool_emissions(e, &pool, current_pool_emissions + new_pool_emissions);
+        set_backstop_emission_eps(e, &pool, &pool_balance, new_backstop_emissions);
     }
     new_emissions
 }
@@ -260,6 +275,7 @@ mod tests {
             storage::set_backstop_emis_data(&e, &pool_1, &pool_1_emissions_data);
             storage::set_pool_emissions(&e, &pool_1, 100_123_0000000);
             storage::set_backstop_emis_data(&e, &pool_2, &pool_2_emissions_data);
+
             storage::set_pool_balance(
                 &e,
                 &pool_1,
@@ -288,8 +304,10 @@ mod tests {
                 },
             );
             // blnd_token_client.approve(&backstop, &pool_1, &100_123_0000000, &1000000);
-
-            gulp_emissions(&e);
+            distribute(&e);
+            gulp_emissions(&e, &pool_1);
+            gulp_emissions(&e, &pool_2);
+            gulp_emissions(&e, &pool_3);
 
             assert_eq!(storage::get_last_distribution_time(&e), emitter_distro_time);
             assert_eq!(
@@ -422,7 +440,7 @@ mod tests {
                 },
             );
 
-            gulp_emissions(&e);
+            distribute(&e);
         });
     }
 

@@ -25,4 +25,6 @@ pub enum BackstopError {
     InvalidShareMintAmount = 1005,
     InvalidTokenWithdrawAmount = 1006,
     TooManyQ4WEntries = 1007,
+
+    NotInRewardZone = 1008,
 }
