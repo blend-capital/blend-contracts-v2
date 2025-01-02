@@ -38,7 +38,7 @@ pub fn execute_dequeue_withdrawal(e: &Env, from: &Address, pool_address: &Addres
     // update emissions
     emissions::update_emissions(e, pool_address, &pool_balance, from, &user_balance);
 
-    user_balance.dequeue_shares_for_withdrawal(e, amount, false);
+    user_balance.dequeue_shares(e, amount);
     user_balance.add_shares(amount);
     pool_balance.dequeue_q4w(e, amount);
 
@@ -53,7 +53,7 @@ pub fn execute_withdraw(e: &Env, from: &Address, pool_address: &Address, amount:
     let mut pool_balance = storage::get_pool_balance(e, pool_address);
     let mut user_balance = storage::get_user_balance(e, pool_address, from);
 
-    user_balance.dequeue_shares_for_withdrawal(e, amount, true);
+    user_balance.withdraw_shares(e, amount);
 
     let to_return = pool_balance.convert_to_tokens(amount);
     if to_return == 0 {
@@ -202,12 +202,24 @@ mod tests {
         // queue shares for withdraw
         e.as_contract(&backstop_address, || {
             execute_deposit(&e, &samwise, &pool_address, 75_0000000);
-            execute_queue_withdrawal(&e, &samwise, &pool_address, 25_0000000);
 
             e.ledger().set(LedgerInfo {
                 protocol_version: 22,
                 sequence_number: 100,
                 timestamp: 10000,
+                network_id: Default::default(),
+                base_reserve: 10,
+                min_temp_entry_ttl: 10,
+                min_persistent_entry_ttl: 10,
+                max_entry_ttl: 3110400,
+            });
+
+            execute_queue_withdrawal(&e, &samwise, &pool_address, 25_0000000);
+
+            e.ledger().set(LedgerInfo {
+                protocol_version: 22,
+                sequence_number: 100,
+                timestamp: 20000,
                 network_id: Default::default(),
                 base_reserve: 10,
                 min_temp_entry_ttl: 10,
@@ -221,7 +233,7 @@ mod tests {
         e.ledger().set(LedgerInfo {
             protocol_version: 22,
             sequence_number: 200,
-            timestamp: 20000,
+            timestamp: 30000,
             network_id: Default::default(),
             base_reserve: 10,
             min_temp_entry_ttl: 10,
@@ -237,8 +249,12 @@ mod tests {
             let expected_q4w = vec![
                 &e,
                 Q4W {
-                    amount: 35_0000000,
+                    amount: 25_0000000,
                     exp: 10000 + 21 * 24 * 60 * 60,
+                },
+                Q4W {
+                    amount: 10_0000000,
+                    exp: 20000 + 21 * 24 * 60 * 60,
                 },
             ];
             assert_eq_vec_q4w(&new_user_balance.q4w, &expected_q4w);

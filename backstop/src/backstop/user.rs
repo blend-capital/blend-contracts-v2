@@ -67,45 +67,72 @@ impl UserBalance {
         self.q4w.push_back(new_q4w.clone());
     }
 
-    /// Dequeue shares from the withdrawal queue
+    /// Withdraw shares from the withdrawal queue
+    ///
+    /// ### Arguments
+    /// * `to_withdraw` - The amount of shares to withdraw from the withdrawal queue
+    ///
+    /// ### Errors
+    /// If the user does not have enough shares currently eligible to withdraw
+    #[allow(clippy::comparison_chain)]
+    pub fn withdraw_shares(&mut self, e: &Env, to_withdraw: i128) {
+        // validate the invoke has enough unlocked Q4W to claim
+        // manage the q4w list while verifying
+        let mut left_to_withdraw: i128 = to_withdraw;
+        for _index in 0..self.q4w.len() {
+            let mut cur_q4w = self.q4w.pop_front_unchecked();
+            if cur_q4w.exp <= e.ledger().timestamp() {
+                if cur_q4w.amount > left_to_withdraw {
+                    // last record we need to update, but the q4w should remain
+                    cur_q4w.amount -= left_to_withdraw;
+                    left_to_withdraw = 0;
+                    self.q4w.push_front(cur_q4w);
+                    break;
+                } else if cur_q4w.amount == left_to_withdraw {
+                    // last record we need to update, q4w fully consumed
+                    left_to_withdraw = 0;
+                    break;
+                } else {
+                    // allow the pop to consume the record
+                    left_to_withdraw -= cur_q4w.amount;
+                }
+            } else {
+                panic_with_error!(e, BackstopError::NotExpired);
+            }
+        }
+
+        if left_to_withdraw > 0 {
+            panic_with_error!(e, BackstopError::BalanceError);
+        }
+    }
+
+    /// Dequeue shares from the withdrawal queue. Dequeues the most recently queued shares first.
     ///
     /// ### Arguments
     /// * `to_dequeue` - The amount of shares to dequeue from the withdrawal queue
-    /// * `require_expired` - If only expired Q4W can be dequeued. This
-    ///                       MUST be true if the user is withdrawing.
     ///
     /// ### Errors
-    /// If the user does not have enough shares currently queued to dequeue,
-    /// or if they don't have enough queued shares to dequeue
+    /// If they don't have enough queued shares to dequeue
     #[allow(clippy::comparison_chain)]
-    pub fn dequeue_shares_for_withdrawal(
-        &mut self,
-        e: &Env,
-        to_dequeue: i128,
-        require_expired: bool,
-    ) {
+    pub fn dequeue_shares(&mut self, e: &Env, to_dequeue: i128) {
         // validate the invoke has enough unlocked Q4W to claim
         // manage the q4w list while verifying
         let mut left_to_dequeue: i128 = to_dequeue;
         for _index in 0..self.q4w.len() {
-            let mut cur_q4w = self.q4w.pop_front_unchecked();
-            if !require_expired || cur_q4w.exp <= e.ledger().timestamp() {
-                if cur_q4w.amount > left_to_dequeue {
-                    // last record we need to update, but the q4w should remain
-                    cur_q4w.amount -= left_to_dequeue;
-                    left_to_dequeue = 0;
-                    self.q4w.push_front(cur_q4w);
-                    break;
-                } else if cur_q4w.amount == left_to_dequeue {
-                    // last record we need to update, q4w fully consumed
-                    left_to_dequeue = 0;
-                    break;
-                } else {
-                    // allow the pop to consume the record
-                    left_to_dequeue -= cur_q4w.amount;
-                }
+            let mut cur_q4w = self.q4w.pop_back_unchecked();
+            if cur_q4w.amount > left_to_dequeue {
+                // last record we need to update, but the q4w should remain
+                cur_q4w.amount -= left_to_dequeue;
+                left_to_dequeue = 0;
+                self.q4w.push_back(cur_q4w);
+                break;
+            } else if cur_q4w.amount == left_to_dequeue {
+                // last record we need to update, q4w fully consumed
+                left_to_dequeue = 0;
+                break;
             } else {
-                panic_with_error!(e, BackstopError::NotExpired);
+                // allow the pop to consume the record
+                left_to_dequeue -= cur_q4w.amount;
             }
         }
 
@@ -315,6 +342,8 @@ mod tests {
         user.queue_shares_for_withdrawal(&e, to_queue);
     }
 
+    // withdraw_shares
+
     #[test]
     #[should_panic(expected = "Error(Contract, #10)")]
     fn test_withdraw_shares_no_q4w_panics() {
@@ -337,7 +366,7 @@ mod tests {
         });
 
         let to_wd = 1;
-        user.dequeue_shares_for_withdrawal(&e, to_wd, false);
+        user.withdraw_shares(&e, to_wd);
     }
 
     #[test]
@@ -368,7 +397,7 @@ mod tests {
         });
 
         let to_wd = 200;
-        user.dequeue_shares_for_withdrawal(&e, to_wd, true);
+        user.withdraw_shares(&e, to_wd);
 
         assert_eq_vec_q4w(&user.q4w, &vec![&e]);
         assert_eq!(user.shares, 1000);
@@ -402,7 +431,7 @@ mod tests {
         });
 
         let to_wd = 150;
-        user.dequeue_shares_for_withdrawal(&e, to_wd, false);
+        user.withdraw_shares(&e, to_wd);
 
         let expected_q4w = vec![
             &e,
@@ -451,7 +480,7 @@ mod tests {
         });
 
         let to_wd = 300;
-        user.dequeue_shares_for_withdrawal(&e, to_wd, true);
+        user.withdraw_shares(&e, to_wd);
 
         let expected_q4w = vec![
             &e,
@@ -505,51 +534,12 @@ mod tests {
         });
 
         let to_wd = 300;
-        user.dequeue_shares_for_withdrawal(&e, to_wd, true);
+        user.withdraw_shares(&e, to_wd);
     }
 
-    #[test]
-    #[should_panic(expected = "Error(Contract, #1001)")]
-    fn test_try_dequeue_shares_require_expired_expect_panic() {
-        let e = Env::default();
-
-        let cur_q4w = vec![
-            &e,
-            Q4W {
-                amount: 125,
-                exp: 10000000,
-            },
-            Q4W {
-                amount: 200,
-                exp: 12592000,
-            },
-            Q4W {
-                amount: 50,
-                exp: 19592000,
-            },
-        ];
-        let mut user = UserBalance {
-            shares: 1000,
-            q4w: cur_q4w.clone(),
-        };
-
-        e.ledger().set(LedgerInfo {
-            protocol_version: 22,
-            sequence_number: 1,
-            timestamp: 11192000,
-            network_id: Default::default(),
-            base_reserve: 10,
-            min_temp_entry_ttl: 10,
-            min_persistent_entry_ttl: 10,
-            max_entry_ttl: 3110400,
-        });
-        let to_dequeue = 300;
-        // verify exp is respected when specified
-        user.dequeue_shares_for_withdrawal(&e, to_dequeue, true);
-    }
     #[test]
     #[should_panic(expected = "Error(Contract, #10)")]
-    fn test_try_withdraw_shares_over_total() {
+    fn test_withdraw_shares_over_total() {
         let e = Env::default();
 
         let cur_q4w = vec![
@@ -560,11 +550,11 @@ mod tests {
             },
             Q4W {
                 amount: 200,
-                exp: 12592000,
+                exp: 11190000,
             },
             Q4W {
                 amount: 50,
-                exp: 19592000,
+                exp: 11191000,
             },
         ];
         let mut user = UserBalance {
@@ -584,6 +574,201 @@ mod tests {
         });
 
         let to_dequeue = 376;
-        user.dequeue_shares_for_withdrawal(&e, to_dequeue, false);
+        user.withdraw_shares(&e, to_dequeue);
+    }
+
+    // dequeue_shares
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #10)")]
+    fn test_dequeue_shares_no_q4w_panics() {
+        let e = Env::default();
+
+        let mut user = UserBalance {
+            shares: 1000,
+            q4w: vec![&e],
+        };
+
+        e.ledger().set(LedgerInfo {
+            protocol_version: 22,
+            sequence_number: 1,
+            timestamp: 11000000,
+            network_id: Default::default(),
+            base_reserve: 10,
+            min_temp_entry_ttl: 10,
+            min_persistent_entry_ttl: 10,
+            max_entry_ttl: 3110400,
+        });
+
+        let to_wd = 1;
+        user.dequeue_shares(&e, to_wd);
+    }
+
+    #[test]
+    fn test_dequeue_shares_exact_amount() {
+        let e = Env::default();
+
+        let cur_q4w = vec![
+            &e,
+            Q4W {
+                amount: 200,
+                exp: 10000000,
+            },
+        ];
+        let mut user = UserBalance {
+            shares: 1000,
+            q4w: cur_q4w.clone(),
+        };
+
+        e.ledger().set(LedgerInfo {
+            protocol_version: 22,
+            sequence_number: 1,
+            timestamp: 12592000,
+            network_id: Default::default(),
+            base_reserve: 10,
+            min_temp_entry_ttl: 10,
+            min_persistent_entry_ttl: 10,
+            max_entry_ttl: 3110400,
+        });
+
+        let to_dequeue = 200;
+        user.dequeue_shares(&e, to_dequeue);
+
+        assert_eq_vec_q4w(&user.q4w, &vec![&e]);
+        assert_eq!(user.shares, 1000);
+    }
+
+    #[test]
+    fn test_dequeue_shares_less_than_entry() {
+        let e = Env::default();
+
+        let cur_q4w = vec![
+            &e,
+            Q4W {
+                amount: 200,
+                exp: 14592000,
+            },
+        ];
+        let mut user = UserBalance {
+            shares: 1000,
+            q4w: cur_q4w.clone(),
+        };
+
+        e.ledger().set(LedgerInfo {
+            protocol_version: 22,
+            sequence_number: 1,
+            timestamp: 12592000,
+            network_id: Default::default(),
+            base_reserve: 10,
+            min_temp_entry_ttl: 10,
+            min_persistent_entry_ttl: 10,
+            max_entry_ttl: 3110400,
+        });
+
+        let to_dequeue = 150;
+        user.dequeue_shares(&e, to_dequeue);
+
+        let expected_q4w = vec![
+            &e,
+            Q4W {
+                amount: 50,
+                exp: 14592000,
+            },
+        ];
+        assert_eq_vec_q4w(&user.q4w, &expected_q4w);
+        assert_eq!(user.shares, 1000);
+    }
+
+    #[test]
+    fn test_dequeue_shares_multiple_entries_dequeue_newest() {
+        let e = Env::default();
+
+        let cur_q4w = vec![
+            &e,
+            Q4W {
+                amount: 125,
+                exp: 10000000,
+            },
+            Q4W {
+                amount: 200,
+                exp: 12592000,
+            },
+            Q4W {
+                amount: 50,
+                exp: 19592000,
+            },
+        ];
+        let mut user = UserBalance {
+            shares: 1000,
+            q4w: cur_q4w.clone(),
+        };
+
+        e.ledger().set(LedgerInfo {
+            protocol_version: 22,
+            sequence_number: 1,
+            timestamp: 22592000,
+            network_id: Default::default(),
+            base_reserve: 10,
+            min_temp_entry_ttl: 10,
+            min_persistent_entry_ttl: 10,
+            max_entry_ttl: 3110400,
+        });
+
+        let to_dequeue = 150;
+        user.dequeue_shares(&e, to_dequeue);
+
+        let expected_q4w = vec![
+            &e,
+            Q4W {
+                amount: 125,
+                exp: 10000000,
+            },
+            Q4W {
+                amount: 100,
+                exp: 12592000,
+            },
+        ];
+        assert_eq_vec_q4w(&user.q4w, &expected_q4w);
+        assert_eq!(user.shares, 1000);
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #10)")]
+    fn test_dequeue_shares_over_total() {
+        let e = Env::default();
+
+        let cur_q4w = vec![
+            &e,
+            Q4W {
+                amount: 125,
+                exp: 10000000,
+            },
+            Q4W {
+                amount: 200,
+                exp: 11190000,
+            },
+            Q4W {
+                amount: 50,
+                exp: 11191000,
+            },
+        ];
+        let mut user = UserBalance {
+            shares: 1000,
+            q4w: cur_q4w.clone(),
+        };
+
+        e.ledger().set(LedgerInfo {
+            protocol_version: 22,
+            sequence_number: 1,
+            timestamp: 11192000,
+            network_id: Default::default(),
+            base_reserve: 10,
+            min_temp_entry_ttl: 10,
+            min_persistent_entry_ttl: 10,
+            max_entry_ttl: 3110400,
+        });
+
+        let to_dequeue = 376;
+        user.dequeue_shares(&e, to_dequeue);
     }
 }
