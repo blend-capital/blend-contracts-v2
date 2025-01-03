@@ -1,10 +1,10 @@
 use sep_41_token::TokenClient;
-use soroban_sdk::{panic_with_error, Address, Env, Vec};
+use soroban_sdk::{panic_with_error, Address, Env, Map, Vec};
 
 use crate::PoolError;
 
 use super::{
-    actions::{build_actions_from_request, Request},
+    actions::{build_actions_from_request, Actions, Request},
     health_factor::PositionData,
     pool::Pool,
     Positions,
@@ -38,7 +38,7 @@ pub fn execute_submit(
     let mut pool = Pool::load(e);
 
     let (actions, new_from_state, check_health) =
-        build_actions_from_request(e, &mut pool, from, requests, use_allowance);
+        build_actions_from_request(e, &mut pool, from, requests);
 
     // panics if the new positions set does not meet the health factor requirement
     // min is 1.0000100 to prevent rounding errors
@@ -50,31 +50,66 @@ pub fn execute_submit(
         panic_with_error!(e, PoolError::InvalidHf);
     }
 
-    // transfer tokens from sender to pool
-    for (address, amount) in actions.spender_transfer.iter() {
-        let token = TokenClient::new(e, &address);
-        if use_allowance {
-            token.transfer_from(
-                &e.current_contract_address(),
-                spender,
-                &e.current_contract_address(),
-                &amount,
-            );
-        } else {
-            token.transfer(spender, &e.current_contract_address(), &amount);
-        }
+    if use_allowance {
+        handle_transfer_with_allowance(e, &actions, spender, to);
+    } else {
+        handle_transfers(e, &actions, spender, to);
     }
 
     // store updated info to ledger
     pool.store_cached_reserves(e);
     new_from_state.store(e);
 
+    new_from_state.positions
+}
+
+fn handle_transfer_with_allowance(e: &Env, actions: &Actions, spender: &Address, to: &Address) {
+    // map of token -> amount
+    // amount can be negative:
+    // pool owes when amount > 0
+    // spender owes when amount < 0
+    let mut net_balances: Map<Address, i128> = Map::new(e);
+
+    for (token, amount) in actions.spender_transfer.iter() {
+        net_balances.set(
+            token.clone(),
+            net_balances.get(token).unwrap_or_default() - amount,
+        );
+    }
+    for (token, amount) in actions.pool_transfer.iter() {
+        net_balances.set(
+            token.clone(),
+            net_balances.get(token).unwrap_or_default() + amount,
+        );
+    }
+
+    for (address, amount) in net_balances {
+        let token = TokenClient::new(e, &address);
+        if amount < 0 {
+            // transfer tokens from sender to pool
+            token.transfer_from(
+                &e.current_contract_address(),
+                spender,
+                &e.current_contract_address(),
+                &amount.abs(),
+            );
+        } else if amount > 0 {
+            // transfer tokens from pool to "to"
+            token.transfer(&e.current_contract_address(), to, &amount);
+        }
+    }
+}
+
+fn handle_transfers(e: &Env, actions: &Actions, spender: &Address, to: &Address) {
+    // transfer tokens from sender to pool
+    for (address, amount) in actions.spender_transfer.iter() {
+        TokenClient::new(e, &address).transfer(spender, &e.current_contract_address(), &amount);
+    }
+
     // transfer tokens from pool to "to"
     for (address, amount) in actions.pool_transfer.iter() {
         TokenClient::new(e, &address).transfer(&e.current_contract_address(), to, &amount);
     }
-
-    new_from_state.positions
 }
 
 #[cfg(test)]
