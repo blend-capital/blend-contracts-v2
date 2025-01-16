@@ -14,7 +14,7 @@ use pool::{PoolClient, PoolConfig, PoolDataKey, ReserveConfig, ReserveData, Rese
 use pool_factory::{PoolFactoryClient, PoolInitMeta};
 use sep_40_oracle::testutils::{Asset, MockPriceOracleClient};
 use sep_41_token::testutils::MockTokenClient;
-use soroban_sdk::testutils::{Address as _, BytesN as _, Ledger, LedgerInfo};
+use soroban_sdk::testutils::{Address as _, BytesN as _, EnvTestConfig, Ledger, LedgerInfo};
 use soroban_sdk::{vec as svec, Address, BytesN, Env, Map, String, Symbol};
 
 pub const SCALAR_7: i128 = 1_000_0000;
@@ -61,7 +61,9 @@ impl TestFixture<'_> {
     /// Deploys BLND (0), USDC (1), wETH (2), XLM (3), and STABLE (4) test tokens, alongside all required
     /// Blend Protocol contracts, including a BLND-USDC LP.
     pub fn create<'a>(wasm: bool) -> TestFixture<'a> {
-        let e = Env::default();
+        let e = Env::new_with_config(EnvTestConfig {
+            capture_snapshot_at_drop: false,
+        });
         e.mock_all_auths();
         e.cost_estimate().budget().reset_unlimited();
 

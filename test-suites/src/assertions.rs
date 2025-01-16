@@ -12,22 +12,10 @@ pub fn assert_approx_eq_abs(a: i128, b: i128, delta: i128) {
     );
 }
 
+/// Assert that `a` is approximately equal to `b` within a relative error of `delta`.
+///
+/// delta is a percentage such that 15% is 0_1500000
 pub fn assert_approx_eq_rel(a: i128, b: i128, delta: i128) {
-    assert!(
-        a > b
-            - (b.fixed_mul_floor(delta, SCALAR_7)
-                .unwrap()
-                .fixed_div_floor(100_0000000, SCALAR_7))
-            .unwrap()
-            && a < b
-                + (b.fixed_mul_floor(delta, SCALAR_7)
-                    .unwrap()
-                    .fixed_div_floor(100_0000000, SCALAR_7))
-                .unwrap(),
-        "assertion failed: `(left != right)` \
-         (left: `{:?}`, right: `{:?}`, epsilon: `{:?}`)",
-        a,
-        b,
-        delta
-    );
+    let abs_delta = b.fixed_mul_floor(delta, SCALAR_7).unwrap();
+    assert_approx_eq_abs(a, b, abs_delta);
 }
