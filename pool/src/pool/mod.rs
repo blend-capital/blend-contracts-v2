@@ -1,5 +1,5 @@
 mod actions;
-pub use actions::{Request, RequestType};
+pub use actions::{Request, RequestType, FlashLoan};
 
 mod bad_debt;
 pub use bad_debt::transfer_bad_debt_to_backstop;
@@ -17,7 +17,7 @@ mod interest;
 
 mod submit;
 
-pub use submit::execute_submit;
+pub use submit::{execute_submit, execute_submit_with_flash_loan};
 
 #[allow(clippy::module_inception)]
 mod pool;

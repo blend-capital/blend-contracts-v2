@@ -8,6 +8,7 @@ build:
 	cargo rustc --manifest-path=pool-factory/Cargo.toml --crate-type=cdylib --target=wasm32-unknown-unknown --release
 	cargo rustc --manifest-path=backstop/Cargo.toml --crate-type=cdylib --target=wasm32-unknown-unknown --release
 	cargo rustc --manifest-path=pool/Cargo.toml --crate-type=cdylib --target=wasm32-unknown-unknown --release
+	
 	mkdir -p target/wasm32-unknown-unknown/optimized
 	stellar contract optimize \
 		--wasm target/wasm32-unknown-unknown/release/pool_factory.wasm \

@@ -20,7 +20,7 @@ soroban-fixed-point-math = { workspace = true }
 cast = { workspace = true }
 sep-40-oracle = { workspace = true }
 sep-41-token = { workspace = true}
-
+moderc3156 = { workspace = true}
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
