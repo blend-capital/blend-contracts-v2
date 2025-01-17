@@ -41,6 +41,7 @@ fn test_v1_to_v2_backstop_swap() {
     let v1_backstop = Address::from_str(&env, snapshot::BACKSTOP_ID);
     let v1_pool = Address::from_str(&env, snapshot::V1_POOL_ID);
 
+    let blnd_client = MockTokenClient::new(&env, &blnd);
     let usdc_client = MockTokenClient::new(&env, &usdc);
     let backstop_token_client = LPClient::new(&env, &backstop_token);
     let emitter_client = emitter::Client::new(&env, &emitter);
@@ -59,7 +60,12 @@ fn test_v1_to_v2_backstop_swap() {
     };
     let v2_pool_factory_client = create_pool_factory(&env, &v2_pool_factory, true, pool_init_meta);
 
-    let drop_list: Vec<(Address, i128)> = vec![&env, (frodo.clone(), 1_000_000 * 10i128.pow(7))];
+    let drop_list: Vec<(Address, i128)> = vec![
+        &env,
+        (frodo.clone(), 1_000_000 * 10i128.pow(7)),
+        (samwise.clone(), 1_000_000 * 10i128.pow(7)),
+        (v1_backstop.clone(), 1_000_000 * 10i128.pow(7)),
+    ];
     let v2_backstop_client = create_backstop(
         &env,
         &v2_backstop,
@@ -104,14 +110,27 @@ fn test_v1_to_v2_backstop_swap() {
     // -> track deposit of 55k LP tokens into v2 backstop during deploy_v2_pool
     to_match_v1 -= 55_000 * SCALAR_7;
 
-    // Test: Validate distribute fails on v2 without swap
+    // Test: Start backfilled emissions
+    v2_backstop_client.distribute();
+
+    // Time: pass 7 days
+    jump(&env, 17280 * 7);
+
+    // Test: Distribute and emit backfilled emissions
     emitter_client.distribute();
-    assert!(v2_backstop_client.try_distribute().is_err());
-    assert!(v2_pool_client.try_gulp_emissions().is_err());
+    // -> this fucntion was renamed on v2, just invoke v1 method directly
+    env.invoke_contract::<Val>(
+        &v1_backstop,
+        &Symbol::new(&env, "gulp_emissions"),
+        vec![&env] as Vec<Val>,
+    );
+    v1_pool_client.gulp_emissions();
+    v2_backstop_client.distribute();
+    v2_pool_client.gulp_emissions();
 
     // start backstop swap
-    // -> in v1 merry earns about 200 LP tokens per week in emissions
-    let approx_v1_new_lp_tokens = 200 * SCALAR_7 * 4;
+    // -> in v1 merry earns about 200 LP tokens per week in emissions (~5 weeks of emissions)
+    let approx_v1_new_lp_tokens = 200 * SCALAR_7 * 5;
     v2_backstop_client.deposit(
         &frodo,
         &v2_pool_id,
@@ -122,50 +141,38 @@ fn test_v1_to_v2_backstop_swap() {
     // Time: pass 7 days (7 days since swap)
     jump(&env, 17280 * 7);
 
-    // Test: Validate v1 still getting emissions and v2 is not
-    // -> claim existing emissions
-    // -> seed balances as trustlines not included in snapshot
-    v1_backstop_client.claim(&merry, &vec![&env, v1_pool.clone()], &merry);
-    v1_pool_client.claim(&merry, &vec![&env, 3], &merry);
-    assert_eq!(
-        v2_backstop_client.claim(&samwise, &vec![&env, v2_pool_id.clone()], &samwise),
-        0
-    );
-    assert_eq!(
-        v2_pool_client.claim(&samwise, &vec![&env, 1, 3], &samwise),
-        0
-    );
     // -> distribute emissions
     emitter_client.distribute();
-    //   -> this fucntion was renamed on v2, just invoke v1 method directly
     env.invoke_contract::<Val>(
         &v1_backstop,
         &Symbol::new(&env, "gulp_emissions"),
         vec![&env] as Vec<Val>,
     );
     v1_pool_client.gulp_emissions();
-    // -> validate v2 still can't distribute
-    assert!(v2_backstop_client.try_distribute().is_err());
-    assert!(v2_pool_client.try_gulp_emissions().is_err());
+    v2_backstop_client.distribute();
+    v2_pool_client.gulp_emissions();
+
+    // Test: Validate v1 still getting emissions and v2 cannot claim
+    v1_backstop_client.claim(&merry, &vec![&env, v1_pool.clone()], &merry);
+    v1_pool_client.claim(&merry, &vec![&env, 3], &merry);
+    assert!(v2_backstop_client
+        .try_claim(&samwise, &vec![&env, v2_pool_id.clone()], &samwise)
+        .is_err());
+    assert!(v2_pool_client
+        .try_claim(&samwise, &vec![&env, 1, 3], &samwise)
+        .is_err());
+
     // Time: pass 7 days (14 days since swap)
     jump(&env, 17280 * 7);
-    // -> validate v1 got emissions and v2 did not
+    // -> track 7 days worth of emissions for v1
     let v1_7_days_backstop = v1_backstop_client.claim(&merry, &vec![&env, v1_pool.clone()], &merry);
     assert!(v1_7_days_backstop > 0);
     let v1_7_days_pool = v1_pool_client.claim(&merry, &vec![&env, 3], &merry);
     assert!(v1_7_days_pool > 0);
-    assert_eq!(
-        v2_backstop_client.claim(&samwise, &vec![&env, v2_pool_id.clone()], &samwise),
-        0
-    );
-    assert_eq!(
-        v2_pool_client.claim(&samwise, &vec![&env, 1, 3], &samwise),
-        0
-    );
 
     // Test: Validate v1 gets all emissions up until swap,
-    //       the swap is successful, and v2 starts getting emissions after swap
-    // -> distribute emissions for v1
+    //       the swap is successful, and v2 emits all backfilled emissions after swap
+    // -> distribute emissions
     emitter_client.distribute();
     env.invoke_contract::<Val>(
         &v1_backstop,
@@ -173,10 +180,13 @@ fn test_v1_to_v2_backstop_swap() {
         vec![&env] as Vec<Val>,
     );
     v1_pool_client.gulp_emissions();
+    v2_backstop_client.distribute();
+    v2_pool_client.gulp_emissions();
+
     // Time: pass 7 days (21 days since swap)
     jump(&env, 17280 * 7);
 
-    // -> distribute emissions for v1
+    // -> distribute emissions
     emitter_client.distribute();
     env.invoke_contract::<Val>(
         &v1_backstop,
@@ -184,6 +194,9 @@ fn test_v1_to_v2_backstop_swap() {
         vec![&env] as Vec<Val>,
     );
     v1_pool_client.gulp_emissions();
+    v2_backstop_client.distribute();
+    v2_pool_client.gulp_emissions();
+
     // Time: pass 7 days (28 days since swap)
     jump(&env, 17280 * 7);
     // -> claim emissions
@@ -198,6 +211,8 @@ fn test_v1_to_v2_backstop_swap() {
         vec![&env] as Vec<Val>,
     );
     v1_pool_client.gulp_emissions();
+    v2_backstop_client.distribute();
+    v2_pool_client.gulp_emissions();
 
     // Time: pass 3 days (31 days since swap)
     jump(&env, 17280 * 3 + 1);
@@ -205,13 +220,56 @@ fn test_v1_to_v2_backstop_swap() {
     // -> do swap
     emitter_client.swap_backstop();
     assert_eq!(emitter_client.get_backstop(), v2_backstop);
+    assert_eq!(
+        emitter_client.get_last_distro(&v2_backstop),
+        env.ledger().timestamp()
+    );
 
     // -> v1 emitter distribute run automatically
-    // -> run v2 distribute to set starting point for emissions
+    // -> start v2 emissions after swap
     v2_backstop_client.distribute();
+
+    // Test: Validate claim fails until gulp is run for v2
+    assert!(v2_backstop_client
+        .try_claim(&samwise, &vec![&env, v2_pool_id.clone()], &samwise)
+        .is_err());
+    assert!(v2_pool_client
+        .try_claim(&samwise, &vec![&env, 1, 3], &samwise)
+        .is_err());
+    let blnd_balance_pre_drop = blnd_client.balance(&v2_backstop);
+    assert_eq!(blnd_balance_pre_drop, 0);
+
+    v2_backstop_client.drop();
+
+    // gets 35d worth of tokens at 1 token per second, the 3d between pre-swap distribution
+    // and the last distribution are lost, but this is expected
+    let backfill_tokens_emitted = 35 * 24 * 60 * 60 * SCALAR_7;
+    assert_eq!(blnd_client.balance(&v2_backstop), backfill_tokens_emitted);
 
     // Time: pass 4 days (4 days since swap)
     jump(&env, 17280 * 4);
+
+    // -> claim backfilled emisions of 35d
+    // -> frodo gets virtually all backstop emissions (70% of emissions)
+    let v2_backstop_claim =
+        v2_backstop_client.claim(&frodo, &vec![&env, v2_pool_id.clone()], &frodo);
+    assert_approx_eq_rel(
+        v2_backstop_claim,
+        backfill_tokens_emitted
+            .fixed_mul_floor(0_7000000, SCALAR_7)
+            .unwrap(),
+        0_0500000,
+    );
+    // -> sawise gets all pool emissions as only user (30% of emissions)
+    let v2_pool_claim = v2_pool_client.claim(&samwise, &vec![&env, 1, 3], &samwise);
+    assert_approx_eq_rel(
+        v2_pool_claim,
+        backfill_tokens_emitted
+            .fixed_mul_floor(0_3000000, SCALAR_7)
+            .unwrap(),
+        0_0100000,
+    );
+
     emitter_client.distribute();
     // -> claim v1 emissions
     v1_backstop_client.claim(&merry, &vec![&env, v1_pool.clone()], &merry);
@@ -223,13 +281,12 @@ fn test_v1_to_v2_backstop_swap() {
         vec![&env] as Vec<Val>,
     );
     v1_pool_client.gulp_emissions();
-    // -> distribute v2 emissions (distributes 4 days of emissions over the next 7 days)
+    // -> distribute v2 emissions ()
     v2_backstop_client.distribute();
     v2_pool_client.gulp_emissions();
 
     // Time: pass 7 days (11 days since swap)
     jump(&env, 17280 * 7);
-
     // -> claim v2 emissions and validate approx. 4 days worth of emissions are claimed
     let tokens_emitted: i128 = 4 * 24 * 60 * 60 * SCALAR_7;
     // -> frodo gets virtually all backstop emissions (0.7 tokens per second)
@@ -271,6 +328,9 @@ fn test_v1_to_v2_backstop_swap() {
         0_1000000,
     );
 
+    // Time: pass 1 day to validate v1 is not getting emissions
+    jump(&env, 17280);
+
     // Test: validate emissons stop to v1
     // -> distribute v1 emissions
     emitter_client.distribute();
@@ -289,6 +349,8 @@ fn test_v1_to_v2_backstop_swap() {
     );
     assert_eq!(v1_pool_client.claim(&merry, &vec![&env, 3], &merry), 0);
 }
+
+/***** Test Helpers *****/
 
 /// Jump the ledger by "blocks" blocks, each block is 5 seconds
 fn jump(env: &Env, blocks: u32) {

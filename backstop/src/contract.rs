@@ -1,5 +1,6 @@
 use crate::{
     backstop::{self, load_pool_backstop_data, PoolBackstopData, UserBalance, Q4W},
+    constants::{MAX_BACKFILLED_EMISSIONS, SCALAR_7},
     dependencies::EmitterClient,
     emissions,
     errors::BackstopError,
@@ -190,6 +191,13 @@ impl BackstopContract {
         storage::set_blnd_token(&e, &blnd_token);
         storage::set_usdc_token(&e, &usdc_token);
         storage::set_pool_factory(&e, &pool_factory);
+        let mut drop_total: i128 = 0;
+        for (_, amount) in drop_list.iter() {
+            drop_total += amount;
+        }
+        if drop_total + MAX_BACKFILLED_EMISSIONS > 50_000_000 * SCALAR_7 {
+            panic_with_error!(&e, BackstopError::BadRequest);
+        }
         storage::set_drop_list(&e, &drop_list);
         storage::set_emitter(&e, &emitter);
     }
@@ -297,7 +305,11 @@ impl Backstop for BackstopContract {
     }
 
     fn drop(e: Env) {
-        EmitterClient::new(&e, &storage::get_emitter(&e)).drop(&storage::get_drop_list(&e))
+        let mut drop_list = storage::get_drop_list(&e);
+        let backfilled_emissions = storage::get_backfill_emissions(&e);
+        drop_list.push_back((e.current_contract_address(), backfilled_emissions));
+        let emitter_client = EmitterClient::new(&e, &storage::get_emitter(&e));
+        emitter_client.drop(&drop_list)
     }
 
     /********** Fund Management *********/

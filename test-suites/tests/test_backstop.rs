@@ -1,9 +1,10 @@
 #![cfg(test)]
 
+use backstop::{BackstopClient, BackstopContract};
 use soroban_fixed_point_math::FixedPoint;
 use soroban_sdk::{
     testutils::{Address as _, AuthorizedFunction, AuthorizedInvocation, Events},
-    vec, Address, IntoVal, Symbol, Val, Vec,
+    vec, Address, Env, IntoVal, Symbol, Val, Vec,
 };
 use test_suites::{
     assertions::assert_approx_eq_abs,
@@ -491,5 +492,104 @@ fn test_backstop() {
         fixture.tokens[TokenIndex::BLND].balance(&fixture.backstop.address),
         bstop_blend_balance - emitted_blnd_1 - emitted_blnd_2,
         SCALAR_7,
+    );
+}
+
+#[test]
+fn test_backstop_constructor() {
+    let e = Env::default();
+
+    let backstop_token = Address::generate(&e);
+    let emitter = Address::generate(&e);
+    let blnd_token = Address::generate(&e);
+    let usdc_token = Address::generate(&e);
+    let pool_factory = Address::generate(&e);
+    let drop_list: Vec<(Address, i128)> = vec![
+        &e,
+        (Address::generate(&e), 10_000_000_0000000),
+        (Address::generate(&e), 10_000_000_0000000),
+        (Address::generate(&e), 10_000_000_0000000),
+        (Address::generate(&e), 10_000_000_0000000),
+    ];
+    let contract_id = e.register(
+        BackstopContract {},
+        (
+            backstop_token.clone(),
+            emitter.clone(),
+            blnd_token.clone(),
+            usdc_token.clone(),
+            pool_factory.clone(),
+            drop_list.clone(),
+        ),
+    );
+
+    e.as_contract(&contract_id, || {
+        let contract_drop_list = e
+            .storage()
+            .persistent()
+            .get::<Symbol, Vec<(Address, i128)>>(&Symbol::new(&e, "DropList"))
+            .unwrap();
+        assert_eq!(contract_drop_list, drop_list);
+
+        let contract_emitter = e
+            .storage()
+            .instance()
+            .get::<Symbol, Address>(&Symbol::new(&e, "Emitter"))
+            .unwrap();
+        assert_eq!(contract_emitter, emitter);
+
+        let contract_blnd_token = e
+            .storage()
+            .instance()
+            .get::<Symbol, Address>(&Symbol::new(&e, "BLNDTkn"))
+            .unwrap();
+        assert_eq!(contract_blnd_token, blnd_token);
+
+        let contract_usdc_token = e
+            .storage()
+            .instance()
+            .get::<Symbol, Address>(&Symbol::new(&e, "USDCTkn"))
+            .unwrap();
+        assert_eq!(contract_usdc_token, usdc_token);
+
+        let contract_pool_factory = e
+            .storage()
+            .instance()
+            .get::<Symbol, Address>(&Symbol::new(&e, "PoolFact"))
+            .unwrap();
+        assert_eq!(contract_pool_factory, pool_factory);
+    });
+
+    let backstop_client = BackstopClient::new(&e, &contract_id);
+    assert_eq!(backstop_client.backstop_token(), backstop_token);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #1000)")]
+fn test_backstop_constructor_over_max() {
+    let e = Env::default();
+
+    let backstop_token = Address::generate(&e);
+    let emitter = Address::generate(&e);
+    let blnd_token = Address::generate(&e);
+    let usdc_token = Address::generate(&e);
+    let pool_factory = Address::generate(&e);
+    let drop_list: Vec<(Address, i128)> = vec![
+        &e,
+        (Address::generate(&e), 10_000_000_0000000),
+        (Address::generate(&e), 10_000_000_0000000),
+        (Address::generate(&e), 10_000_000_0000000),
+        (Address::generate(&e), 10_000_000_0000001),
+    ];
+    e.register(
+        BackstopContract {},
+        (
+            backstop_token.clone(),
+            emitter.clone(),
+            blnd_token.clone(),
+            usdc_token.clone(),
+            pool_factory.clone(),
+            drop_list.clone(),
+        ),
     );
 }

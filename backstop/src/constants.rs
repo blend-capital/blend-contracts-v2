@@ -13,3 +13,7 @@ pub const MAX_Q4W_SIZE: u32 = 21;
 
 /// The time in seconds that a Q4W entry is locked for (21 days).
 pub const Q4W_LOCK_TIME: u64 = 21 * 24 * 60 * 60;
+
+/// The maximum amount of backfilled emissions that can be emitted.
+/// Represents between 3-4 months worth of token emissions.
+pub const MAX_BACKFILLED_EMISSIONS: i128 = 10_000_000 * SCALAR_7;

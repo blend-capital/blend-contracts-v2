@@ -111,7 +111,7 @@ impl TestFixture<'_> {
             &svec![
                 &e,
                 (bombadil.clone(), 10_000_000 * SCALAR_7),
-                (frodo.clone(), 40_000_000 * SCALAR_7)
+                (frodo.clone(), 30_000_000 * SCALAR_7)
             ],
         );
         let pool_hash = e.deployer().upload_contract_wasm(POOL_WASM);

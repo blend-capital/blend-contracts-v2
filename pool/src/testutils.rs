@@ -131,7 +131,7 @@ pub(crate) fn create_backstop<'a>(
             blnd_token,
             usdc_token,
             pool_factory,
-            vec![e, (pool_address.clone(), 50_000_000 * SCALAR_7)],
+            vec![e, (pool_address.clone(), 40_000_000 * SCALAR_7)],
         ),
     );
     e.as_contract(pool_address, || {

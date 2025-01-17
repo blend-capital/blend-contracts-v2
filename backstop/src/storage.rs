@@ -62,6 +62,8 @@ const REWARD_ZONE_KEY: &str = "RZ";
 const DROP_LIST_KEY: &str = "DropList";
 const LP_TOKEN_VAL_KEY: &str = "LPTknVal";
 const RZ_EMISSION_INDEX_KEY: &str = "RZEmissionIndex";
+const BACKFILL_EMISSIONS_KEY: &str = "BackfillEmis";
+const BACKFILL_STATUS_KEY: &str = "Backfill";
 
 #[derive(Clone)]
 #[contracttype]
@@ -327,6 +329,60 @@ pub fn set_reward_zone(e: &Env, reward_zone: &Vec<Address>) {
         .set::<Symbol, Vec<Address>>(&Symbol::new(e, REWARD_ZONE_KEY), reward_zone);
     e.storage().persistent().extend_ttl(
         &Symbol::new(e, REWARD_ZONE_KEY),
+        LEDGER_THRESHOLD_SHARED,
+        LEDGER_BUMP_SHARED,
+    );
+}
+
+/// Get the current total backfill emissions
+pub fn get_backfill_emissions(e: &Env) -> i128 {
+    get_persistent_default(
+        e,
+        &Symbol::new(e, BACKFILL_EMISSIONS_KEY),
+        || 0i128,
+        LEDGER_THRESHOLD_SHARED,
+        LEDGER_BUMP_SHARED,
+    )
+}
+
+/// Set the current total backfill emissions
+///
+/// ### Arguments
+/// * `emissions` - The total emissions currently needed to fulfill all backfilled emissions
+pub fn set_backfill_emissions(e: &Env, emissions: &i128) {
+    e.storage()
+        .persistent()
+        .set::<Symbol, i128>(&Symbol::new(e, BACKFILL_EMISSIONS_KEY), emissions);
+    e.storage().persistent().extend_ttl(
+        &Symbol::new(e, BACKFILL_EMISSIONS_KEY),
+        LEDGER_THRESHOLD_SHARED,
+        LEDGER_BUMP_SHARED,
+    );
+}
+
+/// Get the current total backfill status
+///
+/// None if no status has been recorded, otherwise the current status
+pub fn get_backfill_status(e: &Env) -> Option<bool> {
+    get_persistent_default(
+        e,
+        &Symbol::new(e, BACKFILL_STATUS_KEY),
+        || None,
+        LEDGER_THRESHOLD_SHARED,
+        LEDGER_BUMP_SHARED,
+    )
+}
+
+/// Set the current backfill status
+///
+/// ### Arguments
+/// * `status` - True if the backfill emissions are currently active, false otherwise
+pub fn set_backfill_status(e: &Env, status: &bool) {
+    e.storage()
+        .persistent()
+        .set::<Symbol, bool>(&Symbol::new(e, BACKFILL_STATUS_KEY), status);
+    e.storage().persistent().extend_ttl(
+        &Symbol::new(e, BACKFILL_STATUS_KEY),
         LEDGER_THRESHOLD_SHARED,
         LEDGER_BUMP_SHARED,
     );

@@ -27,4 +27,5 @@ pub enum BackstopError {
     TooManyQ4WEntries = 1007,
     NotInRewardZone = 1008,
     RewardZoneFull = 1009,
+    MaxBackfillEmissions = 1010,
 }
