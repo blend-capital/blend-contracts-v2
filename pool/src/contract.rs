@@ -170,6 +170,15 @@ pub trait Pool {
     /// If the specified conditions are not met for the status to be set
     fn set_status(e: Env, pool_status: u32);
 
+    /// Update the reserve's bToken rate based on the pool's balance. This is useful for tokens where
+    ///  a holder's balance can increase outside of a direct transfer.
+    ///
+    /// ### Arguments
+    /// * `asset` - The address of the asset to gulp
+    ///
+    /// Returns the amount of tokens gulped
+    fn gulp(e: Env, asset: Address) -> i128;
+
     /********* Emission Functions **********/
 
     /// Consume emissions from the backstop and distribute to the reserves based
@@ -405,6 +414,14 @@ impl Pool for PoolContract {
         pool::execute_set_pool_status(&e, pool_status);
 
         PoolEvents::set_status_admin(&e, admin, pool_status);
+    }
+
+    fn gulp(e: Env, asset: Address) -> i128 {
+        storage::extend_instance(&e);
+        let (token_delta, b_rate) = pool::execute_gulp(&e, &asset);
+
+        PoolEvents::gulp(&e, asset, token_delta, b_rate);
+        token_delta
     }
 
     /********* Emission Functions **********/

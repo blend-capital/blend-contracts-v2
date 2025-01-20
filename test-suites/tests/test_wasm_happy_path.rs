@@ -552,7 +552,14 @@ fn test_wasm_happy_path() {
         pool_xlm_balance,
         10,
     );
+
     assert_eq!(result.collateral.get(xlm_pool_index), None);
+
+    let expected_gulp_amount = 100 * SCALAR_7;
+    stable.mint(&pool_fixture.pool.address, &expected_gulp_amount);
+    let gulp_amount = pool_fixture.pool.gulp(&stable.address);
+    assert_eq!(gulp_amount, expected_gulp_amount + 147); // 147 stroops from accumlated rounding loss
+    pool_stable_balance += expected_gulp_amount; // rounding loss does not effect the b_rate
 
     // Merry withdraws all of his STABLE
     let reserve_data = fixture.read_reserve_data(0, TokenIndex::STABLE);
@@ -575,11 +582,13 @@ fn test_wasm_happy_path() {
     pool_stable_balance -= amount;
     merry_stable_balance += amount;
     assert_approx_eq_abs(stable.balance(&merry), merry_stable_balance, 10);
+
     assert_approx_eq_abs(
         stable.balance(&pool_fixture.pool.address),
         pool_stable_balance,
         10,
     );
+
     assert_eq!(result.collateral.get(stable_pool_index), None);
 
     // Frodo queues for withdrawal a portion of his backstop deposit
