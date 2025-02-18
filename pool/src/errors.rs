@@ -51,4 +51,7 @@ pub enum PoolError {
     InvalidBid = 1221,
     InvalidLot = 1222,
     ReserveDisabled = 1223,
+
+    // Gulp Errors
+    GulpReserveTooLow = 1224,
 }
