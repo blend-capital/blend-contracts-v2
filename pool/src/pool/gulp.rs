@@ -1,7 +1,7 @@
 use sep_41_token::TokenClient;
 use soroban_sdk::{panic_with_error, Address, Env};
 
-use crate::{constants::SCALAR_7, storage, PoolError};
+use crate::{storage, PoolError};
 
 use super::Reserve;
 
@@ -20,7 +20,7 @@ pub fn execute_gulp(e: &Env, asset: &Address) -> (i128, i128) {
         reserve.total_supply(e) + reserve.data.backstop_credit - reserve.total_liabilities(e);
 
     // Rejects if there's less than 1 total token in the reserve
-    if reserve_token_balance < reserve.scalar {
+    if reserve.data.b_supply < reserve.scalar {
         panic_with_error!(e, PoolError::GulpReserveTooLow);
     }
 
