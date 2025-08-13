@@ -1,4 +1,4 @@
-# Blend Protocol
+# Blend Protocol V2
 
 This repository contains the smart contacts for an implementation of the Blend Protocol. Blend is a universal liquidity protocol primitive that enables the permissionless creation of lending pools.
 
