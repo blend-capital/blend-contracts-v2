@@ -151,6 +151,15 @@ fn test_pool_interest() {
     let mut stable_added = 0;
     for day in 0..365 {
         fixture.jump_with_sequence(24 * 60 * 60);
+        // supply_collateral by a borrower now loads the reserve price (Guardian L-02);
+        // keep the mock oracle instance from archiving over the year-long loop
+        fixture.env.as_contract(&fixture.oracle.address, || {
+            fixture
+                .env
+                .storage()
+                .instance()
+                .extend_ttl(999_999, 9_999_999)
+        });
 
         // supply from pool to cause b_rate update and maintain ~50% util rate
         // 100m tokens borrowed for each reserve @ a 10% borrow rate
