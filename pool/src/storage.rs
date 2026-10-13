@@ -55,6 +55,7 @@ pub struct ReserveConfig {
     pub r_three: u32, // the R3 value in the interest rate formula scaled expressed in 7 decimals
     pub reactivity: u32, // the reactivity constant for the reserve scaled expressed in 7 decimals
     pub supply_cap: i128, // the total amount of underlying tokens that can be supplied to the reserve
+    pub min_position: i128, // minimum underlying amount a nonzero collateral position in this reserve must hold; 0 disables
     pub enabled: bool,    // the enabled flag of the reserve
 }
 

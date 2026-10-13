@@ -19,6 +19,7 @@ pub fn default_reserve_metadata() -> ReserveConfig {
         reactivity: 0_0000020, // 2e-6
         index: 0,
         supply_cap: 1000000000000000000,
+        min_position: 0,
         enabled: true,
     }
 }

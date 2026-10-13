@@ -120,6 +120,7 @@ mod tests {
             r_three: 1_5000000,
             reactivity: 0_0000020,
             supply_cap: 1000000000000000000,
+            min_position: 0,
             index: 0,
             enabled: true,
         };
@@ -158,6 +159,7 @@ mod tests {
             r_three: 1_5000000,
             reactivity: 0_0000020,
             supply_cap: 1000000000000000000,
+            min_position: 0,
             index: 0,
             enabled: true,
         };
@@ -196,6 +198,7 @@ mod tests {
             r_three: 1_5000000,
             reactivity: 0_0000020,
             supply_cap: 1000000000000000000,
+            min_position: 0,
             index: 0,
             enabled: true,
         };
@@ -234,6 +237,7 @@ mod tests {
             r_three: 1_5000000,
             reactivity: 0_0000020,
             supply_cap: 1000000000000000000,
+            min_position: 0,
             index: 0,
             enabled: true,
         };
@@ -271,6 +275,7 @@ mod tests {
             r_three: 1_5000000,
             reactivity: 0_0000020,
             supply_cap: 1000000000000000000,
+            min_position: 0,
             index: 0,
             enabled: true,
         };
@@ -308,6 +313,7 @@ mod tests {
             r_three: 1_5000000,
             reactivity: 0,
             supply_cap: 1000000000000000000,
+            min_position: 0,
             index: 0,
             enabled: true,
         };
@@ -346,6 +352,7 @@ mod tests {
             r_three: 1_5000000,
             reactivity: 0_0000020,
             supply_cap: 1000000000000000000,
+            min_position: 0,
             index: 0,
             enabled: true,
         };
@@ -384,6 +391,7 @@ mod tests {
             r_three: 0,
             reactivity: 0_0000020,
             supply_cap: 1000000000000000000,
+            min_position: 0,
             index: 0,
             enabled: true,
         };

@@ -52,6 +52,8 @@ pub trait Pool {
     /// ### Arguments
     /// * `asset` - The underlying asset to add as a reserve
     /// * `config` - The ReserveConfig for the reserve
+    ///   Includes `min_position`: the minimum underlying amount a nonzero collateral position
+    ///   in this reserve must hold; 0 disables the check
     ///
     /// ### Panics
     /// If the caller is not the admin
