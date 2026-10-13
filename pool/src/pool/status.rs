@@ -3,6 +3,7 @@ use crate::{
     dependencies::{BackstopClient, PoolBackstopData},
     storage, PoolError,
 };
+use sep_40_oracle::PriceFeedClient;
 use soroban_sdk::{panic_with_error, Env};
 
 /// Update the pool status based on the backstop module
@@ -75,6 +76,14 @@ pub fn execute_set_pool_status(e: &Env, pool_status: u32) {
     }
     if pool_config.status == 4 {
         panic_with_error!(e, PoolError::StatusNotAllowed);
+    }
+
+    // a pool leaving setup must have a 7 decimal oracle, which can't be changed afterwards
+    if pool_config.status == 6
+        && matches!(pool_status, 0 | 2 | 3)
+        && PriceFeedClient::new(e, &pool_config.oracle).decimals() != 7
+    {
+        panic_with_error!(e, PoolError::InvalidPrice);
     }
 
     // check the pool has met minimum backstop deposits
@@ -152,11 +161,15 @@ pub fn calc_pool_backstop_threshold(pool_backstop_data: &PoolBackstopData) -> i1
 mod tests {
     use crate::{
         storage::PoolConfig,
-        testutils::{create_backstop, create_comet_lp_pool, create_pool, create_token_contract},
+        testutils::{
+            create_backstop, create_comet_lp_pool, create_mock_oracle, create_pool,
+            create_token_contract,
+        },
     };
 
     use super::*;
-    use soroban_sdk::{testutils::Address as _, vec, Address};
+    use sep_40_oracle::testutils::Asset;
+    use soroban_sdk::{testutils::Address as _, vec, Address, Symbol};
 
     #[test]
     fn test_set_pool_status_active() {
@@ -389,10 +402,17 @@ mod tests {
         e.cost_estimate().budget().reset_unlimited();
         e.mock_all_auths_allowing_non_root_auth();
         let pool_id = create_pool(&e);
-        let oracle_id = Address::generate(&e);
+        let (oracle_id, oracle_client) = create_mock_oracle(&e);
 
         let bombadil = Address::generate(&e);
         let samwise = Address::generate(&e);
+        oracle_client.set_data(
+            &bombadil,
+            &Asset::Other(Symbol::new(&e, "USD")),
+            &vec![&e, Asset::Stellar(Address::generate(&e))],
+            &7,
+            &300,
+        );
 
         let (blnd, blnd_client) = create_token_contract(&e, &bombadil);
         let (usdc, usdc_client) = create_token_contract(&e, &bombadil);
@@ -424,6 +444,56 @@ mod tests {
             storage::set_pool_config(&e, &pool_config);
 
             execute_set_pool_status(&e, 3);
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #1210)")]
+    fn test_set_pool_status_setup_blocks_with_invalid_oracle_decimals() {
+        let e = Env::default();
+        e.cost_estimate().budget().reset_unlimited();
+        e.mock_all_auths_allowing_non_root_auth();
+        let pool_id = create_pool(&e);
+        let bombadil = Address::generate(&e);
+        let samwise = Address::generate(&e);
+        let (oracle_id, oracle_client) = create_mock_oracle(&e);
+        oracle_client.set_data(
+            &bombadil,
+            &Asset::Other(Symbol::new(&e, "USD")),
+            &vec![&e, Asset::Stellar(Address::generate(&e))],
+            &8,
+            &300,
+        );
+
+        let (blnd, blnd_client) = create_token_contract(&e, &bombadil);
+        let (usdc, usdc_client) = create_token_contract(&e, &bombadil);
+        let (lp_token, lp_token_client) = create_comet_lp_pool(&e, &bombadil, &blnd, &usdc);
+        let (_, backstop_client) = create_backstop(&e, &pool_id, &lp_token, &usdc, &blnd);
+
+        // mint lp tokens
+        blnd_client.mint(&samwise, &500_001_0000000);
+        blnd_client.approve(&samwise, &lp_token, &i128::MAX, &99999);
+        usdc_client.mint(&samwise, &12_501_0000000);
+        usdc_client.approve(&samwise, &lp_token, &i128::MAX, &99999);
+        lp_token_client.join_pool(
+            &50_000_0000000,
+            &vec![&e, 500_001_0000000, 12_501_0000000],
+            &samwise,
+        );
+        backstop_client.deposit(&samwise, &pool_id, &50_000_0000000);
+
+        let pool_config = PoolConfig {
+            oracle: oracle_id,
+            min_collateral: 0,
+            bstop_rate: 0,
+            status: 6,
+            max_positions: 4,
+        };
+        e.as_contract(&pool_id, || {
+            storage::set_admin(&e, &bombadil);
+            storage::set_pool_config(&e, &pool_config);
+
+            execute_set_pool_status(&e, 0);
         });
     }
     #[test]

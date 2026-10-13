@@ -30,6 +30,7 @@ pub fn bad_debt(e: &Env, user: &Address) {
 /// Check if a user has bad debt.
 ///
 /// If aggregate raw collateral is zero, set off ordinary supply before defaulting residual debt.
+/// Prices are not consulted when the user has no collateral.
 /// Take custody of residual collateral only if debt was actually defaulted; full setoff retains it.
 ///
 /// If not, this function does nothing.
@@ -53,8 +54,12 @@ pub fn check_and_handle_user_bad_debt(
     user: &Address,
     user_state: &mut User,
 ) -> bool {
-    if !user_state.has_liabilities()
-        || PositionData::calculate_from_positions(e, pool, &user_state.positions).collateral_raw
+    if !user_state.has_liabilities() {
+        return false;
+    }
+    // prices are only needed (and only loaded) when there is collateral to value
+    if user_state.positions.collateral.values().iter().any(|a| a > 0)
+        && PositionData::calculate_from_positions(e, pool, &user_state.positions).collateral_raw
             != 0
     {
         return false;
@@ -973,6 +978,88 @@ mod tests {
             assert_eq!(post_reserve_data_1.d_rate, reserve_data_1.d_rate);
             assert_eq!(post_reserve_data_1.b_supply, reserve_data_1.b_supply);
             assert_eq!(post_reserve_data_1.b_rate, 0); // clamped at zero
+        });
+    }
+
+    #[test]
+    fn test_check_and_handle_user_bad_debt_no_collateral_zero_price() {
+        let e = Env::default();
+        e.cost_estimate().budget().reset_unlimited();
+        e.mock_all_auths();
+
+        let pool = create_pool(&e);
+        let bombadil = Address::generate(&e);
+        let frodo = Address::generate(&e);
+        let samwise = Address::generate(&e);
+
+        let (blnd, blnd_client) = create_blnd_token(&e, &pool, &bombadil);
+        let (usdc, usdc_client) = create_token_contract(&e, &bombadil);
+        let (lp_token, lp_token_client) = create_comet_lp_pool(&e, &bombadil, &blnd, &usdc);
+        let (_, backstop_client) = create_backstop(&e, &pool, &lp_token, &usdc, &blnd);
+
+        let backstop_tokens = 1_500_0000000;
+        blnd_client.mint(&frodo, &500_001_0000000);
+        blnd_client.approve(&frodo, &lp_token, &i128::MAX, &99999);
+        usdc_client.mint(&frodo, &12_501_0000000);
+        usdc_client.approve(&frodo, &lp_token, &i128::MAX, &99999);
+        lp_token_client.join_pool(
+            &backstop_tokens,
+            &vec![&e, 500_001_0000000, 12_501_0000000],
+            &frodo,
+        );
+        backstop_client.deposit(&frodo, &pool, &backstop_tokens);
+
+        let (underlying_0, _) = testutils::create_token_contract(&e, &bombadil);
+        let (reserve_config, mut reserve_data_0) = testutils::default_reserve_meta();
+        reserve_data_0.d_supply = 50_987_654_321;
+        reserve_data_0.b_supply = reserve_data_0.d_supply;
+        reserve_data_0.last_time = 100;
+        testutils::create_reserve(&e, &pool, &underlying_0, &reserve_config, &reserve_data_0);
+
+        let ledger = LedgerInfo {
+            timestamp: 100,
+            protocol_version: 22,
+            sequence_number: 1234,
+            network_id: Default::default(),
+            base_reserve: 10,
+            min_temp_entry_ttl: 10,
+            min_persistent_entry_ttl: 10,
+            max_entry_ttl: 3110400,
+        };
+        e.ledger().set(ledger.clone());
+        let (oracle, oracle_client) = testutils::create_mock_oracle(&e);
+        oracle_client.set_data(
+            &bombadil,
+            &Asset::Other(Symbol::new(&e, "USD")),
+            &vec![&e, Asset::Stellar(underlying_0.clone())],
+            &7,
+            &300,
+        );
+        oracle_client.set_price_stable(&vec![&e, 0]);
+        let pool_config = PoolConfig {
+            oracle,
+            min_collateral: 1_0000000,
+            bstop_rate: 0_1000000,
+            status: 1,
+            max_positions: 5,
+        };
+        let positions = Positions {
+            liabilities: map![&e, (0, 50_987_654_321)],
+            collateral: map![&e],
+            supply: map![&e],
+        };
+        e.as_contract(&pool, || {
+            storage::set_pool_config(&e, &pool_config);
+            storage::set_user_positions(&e, &samwise, &positions);
+
+            // the debt price is zero, so load_price would panic InvalidPrice if consulted
+            let mut pool = Pool::load(&e);
+            let mut user = User::load(&e, &samwise);
+
+            let result = check_and_handle_user_bad_debt(&e, &mut pool, &samwise, &mut user);
+            assert_eq!(result, true);
+            assert_eq!(user.positions.liabilities.len(), 0);
+            assert_eq!(user.positions.collateral.len(), 0);
         });
     }
 
