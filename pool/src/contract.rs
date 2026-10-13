@@ -112,7 +112,8 @@ pub trait Pool {
     /// * `requests` - A vec of requests to be processed
     ///
     /// ### Panics
-    /// If the request is not able to be completed for cases like insufficient funds or invalid health factor
+    /// If the request is not able to be completed for cases like insufficient funds or invalid health factor.
+    /// Request types 7 and 8 (fill bad debt / interest auction) are unsupported and rejected before auction storage is read.
     fn submit(
         e: Env,
         from: Address,
@@ -133,7 +134,8 @@ pub trait Pool {
     /// * `requests` - A vec of requests to be processed
     ///
     /// ### Panics
-    /// If the request is not able to be completed for cases like insufficient funds, insufficient allowance, or invalid health factor
+    /// If the request is not able to be completed for cases like insufficient funds, insufficient allowance, or invalid health factor.
+    /// Request types 7 and 8 (fill bad debt / interest auction) are unsupported and rejected.
     fn submit_with_allowance(
         e: Env,
         from: Address,
@@ -184,7 +186,8 @@ pub trait Pool {
     /// * 0 = admin active - requires that the backstop threshold is met
     ///                 and less than 50% of backstop deposits are queued for withdrawal
     /// * 2 = admin on-ice - requires that less than 75% of backstop deposits are queued for withdrawal
-    /// * 4 = admin frozen - can always be set
+    /// * 4 = admin frozen - can always be set. Status 4 is permanent: even the admin cannot move the pool out of it
+    ///                 (re-setting 4 is allowed; any other status reverts with `StatusNotAllowed`)
     ///
     /// ### Arguments
     /// * `pool_status` - The pool status to be set
@@ -194,17 +197,20 @@ pub trait Pool {
     /// If the specified conditions are not met for the status to be set
     fn set_status(e: Env, pool_status: u32);
 
-    /// Gulps unaccounted for tokens to the backstop credit so they aren't lost. This is most relevant
-    /// for rebasing tokens where the token balance of the pool can increase without any corresponding
-    /// transfer.
+    /// Settles pool-owned orphan supply shares for a reserve. This only succeeds once the reserve's debt is zero
+    /// and always returns 0.
     ///
-    /// Blend Pools do not support fee-on-transaction tokens, or any tokens in which the pools balance
-    /// can decrease without any corresponding withdraw. Thus, negative token deltas are ignored.
+    /// This does NOT reconcile the pool's underlying token balance: direct token transfers to the pool and positive
+    /// balance adjustments (e.g. rebases) are not credited to suppliers or the backstop (unrecoverable surplus
+    /// policy). Negative token deltas are likewise ignored.
     ///
     /// ### Arguments
     /// * `asset` - The address of the asset to gulp
     ///
-    /// Returns the amount of tokens gulped
+    /// Returns 0 (no tokens are gulped)
+    ///
+    /// ### Panics
+    /// If the reserve still has debt, or b-token emissions state is contradictory (`BadRequest`)
     fn gulp(e: Env, asset: Address) -> i128;
 
     /********* Emission Functions **********/
@@ -264,16 +270,15 @@ pub trait Pool {
 
     /***** Auction / Liquidation Functions *****/
 
-    /// Create a new auction. Auctions are used to process liquidations, bad debt, and interest.
+    /// Create a new auction. Only user liquidation auctions (type 0) are supported.
     ///
     /// ### Arguments
-    /// * `auction_type` - The type of auction, 0 for liquidation auction, 1 for bad debt auction, and 2 for interest auction
-    /// * `user` - The Address involved in the auction. This is generally the source of the assets being auctioned.
-    ///            For bad debt and interest auctions, this is expected to be the backstop address.
+    /// * `auction_type` - The type of auction. Only 0 (UserLiquidation) is supported; types 1 (bad debt) and 2 (interest)
+    ///                    are rejected with `BadRequest` before their constructors run.
+    /// * `user` - The Address being liquidated. This is the source of the assets being auctioned.
     /// * `bid` - The set of assets to include in the auction bid, or what the filler spends when filling the auction.
     /// * `lot` - The set of assets to include in the auction lot, or what the filler receives when filling the auction.
-    /// * `percent` - The percent of the assets to be auctioned off as a percentage (15 => 15%). For bad debt and interest auctions.
-    ///               this is expected to be 100.
+    /// * `percent` - The percent of the assets to be auctioned off as a percentage (15 => 15%).
     fn new_auction(
         e: Env,
         auction_type: u32,
@@ -287,7 +292,8 @@ pub trait Pool {
     /// number of blocks that have passed since the auction was created.
     ///
     /// ### Arguments
-    /// * `auction_type` - The type of auction, 0 for liquidation auction, 1 for bad debt auction, and 2 for interest auction
+    /// * `auction_type` - The type of auction. Only 0 (UserLiquidation) is supported; types 1 (bad debt) and 2 (interest)
+    ///                    are rejected with `BadRequest`
     /// * `user` - The Address involved in the auction
     ///
     /// ### Panics
@@ -299,7 +305,8 @@ pub trait Pool {
     /// and it should be re-created.
     ///
     /// ### Arguments
-    /// * `auction_type` - The type of auction, 0 for liquidation auction, 1 for bad debt auction, and 2 for interest auction
+    /// * `auction_type` - The type of auction. Only 0 (UserLiquidation) is supported; types 1 (bad debt) and 2 (interest)
+    ///                    are rejected with `BadRequest`
     /// * `user` - The Address involved in the auction
     ///
     /// ### Panics
@@ -308,9 +315,10 @@ pub trait Pool {
     fn del_auction(e: Env, auction_type: u32, user: Address);
 
     /// Check and handle bad debt for a user.
-    /// * If the user is not the backstop and they have bad debt, the backstop will take over the debt.
-    /// * If the user is the backstop, the backstop health will be checked, and if it is unhealthy, the backstop will default it's
-    /// remaining debt.
+    /// * Calls targeting the backstop address are rejected (`BadRequest`); backstop bad debt handling is unsupported.
+    /// * If the user has no remaining collateral value, their same-reserve supply repays their debt first,
+    ///   and any remaining debt is written off against suppliers of that reserve.
+    /// * The backstop does not absorb bad debt.
     ///
     /// ### Arguments
     /// * `user` - The address of the user to check for bad debt

@@ -26,6 +26,8 @@ impl AuctionType {
     pub fn from_u32(e: &Env, value: u32) -> Self {
         match value {
             0 => AuctionType::UserLiquidation,
+            // Types 1 and 2 parse here but are rejected with `BadRequest` by callers
+            // (`create_auction`, `fill`); only type 0 is supported (ADR-0008).
             1 => AuctionType::BadDebtAuction,
             2 => AuctionType::InterestAuction,
             _ => panic_with_error!(e, PoolError::BadRequest),
@@ -72,6 +74,10 @@ pub struct AuctionData {
 /// * If the max positions are exceeded
 /// * If the user and percent are invalid for the auction type
 /// * If the auction is unable to be created
+///
+/// ### Fork restriction (ADR-0008)
+/// Only `UserLiquidation` (auction type 0) is supported. Auction types 1 (bad debt) and
+/// 2 (interest) are rejected with `BadRequest` before their constructors are reached.
 pub fn create_auction(
     e: &Env,
     auction_type: u32,
@@ -89,6 +95,8 @@ pub fn create_auction(
     require_unique_addresses(e, lot);
     let auction_data = match auction_type_enum {
         AuctionType::UserLiquidation => create_user_liq_auction_data(e, user, bid, lot, percent),
+        // UNREACHABLE/UNSUPPORTED (ADR-0008, I-01): types 1 and 2 are rejected with
+        // `BadRequest` above, before any constructor runs. Retained for exhaustiveness only.
         AuctionType::BadDebtAuction => create_bad_debt_auction_data(e, user, bid, lot, percent),
         AuctionType::InterestAuction => create_interest_auction_data(e, user, bid, lot, percent),
     };
@@ -140,6 +148,12 @@ pub fn delete_liquidation(e: &Env, user: &Address) {
 /// ### Panics
 /// If the auction does not exist, or if the pool is unable to fulfill either side
 /// of the auction quote
+///
+/// ### Fork restriction (ADR-0008)
+/// Only `UserLiquidation` (auction type 0) can be filled. Auction types 1 (bad debt) and
+/// 2 (interest) are rejected with `BadRequest`, and request types 7 and 8 (fill bad debt /
+/// interest auction) are unsupported: they are atomically rejected before auction storage
+/// is read. The bad debt and interest fill implementations are therefore unreachable.
 pub fn fill(
     e: &Env,
     pool: &mut Pool,
@@ -162,9 +176,12 @@ pub fn fill(
         AuctionType::UserLiquidation => {
             fill_user_liq_auction(e, pool, &to_fill_auction, user, filler_state, is_full_fill)
         }
+        // UNREACHABLE/UNSUPPORTED (ADR-0008, I-05): types 1/2 and request types 7/8 are
+        // rejected above, before auction storage is read. Retained for exhaustiveness only.
         AuctionType::BadDebtAuction => {
             fill_bad_debt_auction(e, pool, &to_fill_auction, filler_state, is_full_fill);
         }
+        // UNREACHABLE/UNSUPPORTED (ADR-0008, I-05): see note on the bad debt arm above.
         AuctionType::InterestAuction => {
             fill_interest_auction(e, pool, &to_fill_auction, &filler_state.address)
         }
